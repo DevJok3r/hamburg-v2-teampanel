@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { createAdminSupabaseClient } from '@/lib/supabase/admin';
 import { can } from '@/lib/permissions';
-import { UserRole } from '@/types';
+import { UserRole } from '../../../types';
 
 export async function POST(request: NextRequest) {
   // 1. Prüfen ob der anfragende User eingeloggt und berechtigt ist
