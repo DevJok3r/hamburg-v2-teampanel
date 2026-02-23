@@ -1,4 +1,5 @@
-export type UserRole =
+﻿const fs = require('fs');
+const content = "export type UserRole =
   | 'top_management'
   | 'management'
   | 'junior_management'
@@ -106,4 +107,6 @@ export interface Todo {
   due_date: string | null;
   created_at: string;
   updated_at: string;
-}
+}";
+fs.writeFileSync('src/types/index.ts', content);
+console.log('OK:', content.includes('TeamApplication'));
