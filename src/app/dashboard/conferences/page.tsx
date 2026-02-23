@@ -7,10 +7,10 @@ import { can } from '@/lib/permissions';
 import RoleBadge from '@/components/RoleBadge';
 
 const STATUS_STYLES = {
-  scheduled:  'bg-blue-500/10 text-blue-400 border-blue-500/30',
-  active:     'bg-green-500/10 text-green-400 border-green-500/30',
-  completed:  'bg-gray-500/10 text-gray-400 border-gray-500/30',
-  cancelled:  'bg-red-500/10 text-red-400 border-red-500/30',
+  scheduled: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+  active:    'bg-green-500/10 text-green-400 border-green-500/30',
+  completed: 'bg-gray-500/10 text-gray-400 border-gray-500/30',
+  cancelled: 'bg-red-500/10 text-red-400 border-red-500/30',
 };
 
 const STATUS_LABELS = {
@@ -33,25 +33,22 @@ const ATTENDANCE_LABELS = {
 };
 
 export default function ConferencesPage() {
-  const [conferences, setConferences]       = useState<Conference[]>([]);
-  const [members, setMembers]               = useState<Profile[]>([]);
-  const [myRole, setMyRole]                 = useState<UserRole | null>(null);
-  const [myId, setMyId]                     = useState<string>('');
-  const [loading, setLoading]               = useState(true);
-  const [showForm, setShowForm]             = useState(false);
-  const [editConference, setEditConference] = useState<Conference | null>(null);
+  const [conferences, setConferences]           = useState<Conference[]>([]);
+  const [members, setMembers]                   = useState<Profile[]>([]);
+  const [myRole, setMyRole]                     = useState<UserRole | null>(null);
+  const [myId, setMyId]                         = useState<string>('');
+  const [loading, setLoading]                   = useState(true);
+  const [showForm, setShowForm]                 = useState(false);
+  const [editConference, setEditConference]     = useState<Conference | null>(null);
   const [activeAttendance, setActiveAttendance] = useState<{
     conference: Conference;
     attendance: ConferenceAttendance[];
   } | null>(null);
+  const [editingNote, setEditingNote]           = useState<string | null>(null);
+  const [noteText, setNoteText]                 = useState('');
 
-  const [form, setForm] = useState({
-    title: '', description: '', scheduled_at: '',
-  });
-
-  const [editForm, setEditForm] = useState({
-    title: '', description: '', scheduled_at: '',
-  });
+  const [form, setForm]         = useState({ title: '', description: '', scheduled_at: '' });
+  const [editForm, setEditForm] = useState({ title: '', description: '', scheduled_at: '' });
 
   const supabase = createClientSupabaseClient();
 
@@ -61,11 +58,7 @@ export default function ConferencesPage() {
     setMyId(user.id);
 
     const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
+      .from('profiles').select('role').eq('id', user.id).single();
     if (profile) setMyRole(profile.role as UserRole);
 
     const { data: confs } = await supabase
@@ -74,10 +67,8 @@ export default function ConferencesPage() {
       .order('scheduled_at', { ascending: false });
 
     const { data: allMembers } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('is_active', true)
-      .order('username');
+      .from('profiles').select('*')
+      .eq('is_active', true).order('username');
 
     setConferences(confs || []);
     setMembers(allMembers || []);
@@ -113,44 +104,45 @@ export default function ConferencesPage() {
   }
 
   async function cancelConference(id: string) {
-    await supabase.from('conferences')
-      .update({ status: 'cancelled' })
-      .eq('id', id);
-    load();
-  }
-
-  async function rescheduleConference(id: string, newDate: string) {
-    await supabase.from('conferences')
-      .update({ scheduled_at: newDate, status: 'scheduled' })
-      .eq('id', id);
+    await supabase.from('conferences').update({ status: 'cancelled' }).eq('id', id);
     load();
   }
 
   async function startConference(conference: Conference) {
-    // Status auf aktiv setzen
-    await supabase.from('conferences')
-      .update({ status: 'active', started_at: new Date().toISOString() })
-      .eq('id', conference.id);
+    await supabase.from('conferences').update({
+      status: 'active',
+      started_at: new Date().toISOString(),
+    }).eq('id', conference.id);
 
-    // Anwesenheitsliste für alle Mitglieder erstellen
     const attendanceRows = members.map(m => ({
       conference_id: conference.id,
       user_id: m.id,
       status: 'absent' as AttendanceStatus,
+      note: null,
     }));
 
     await supabase.from('conference_attendance')
       .upsert(attendanceRows, { onConflict: 'conference_id,user_id' });
 
-    // Anwesenheitsliste laden
     const { data: attendance } = await supabase
       .from('conference_attendance')
       .select('*, profiles!conference_attendance_user_id_fkey(username, role)')
       .eq('conference_id', conference.id);
 
-    const updatedConference = { ...conference, status: 'active' as const };
-    setActiveAttendance({ conference: updatedConference, attendance: attendance || [] });
+    setActiveAttendance({
+      conference: { ...conference, status: 'active' },
+      attendance: attendance || [],
+    });
     load();
+  }
+
+  async function openAttendance(conference: Conference) {
+    const { data: attendance } = await supabase
+      .from('conference_attendance')
+      .select('*, profiles!conference_attendance_user_id_fkey(username, role)')
+      .eq('conference_id', conference.id);
+
+    setActiveAttendance({ conference, attendance: attendance || [] });
   }
 
   async function updateAttendance(conferenceId: string, userId: string, status: AttendanceStatus) {
@@ -170,10 +162,30 @@ export default function ConferencesPage() {
     });
   }
 
+  async function saveNote(conferenceId: string, userId: string) {
+    await supabase.from('conference_attendance')
+      .update({ note: noteText || null })
+      .eq('conference_id', conferenceId)
+      .eq('user_id', userId);
+
+    setActiveAttendance(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        attendance: prev.attendance.map(a =>
+          a.user_id === userId ? { ...a, note: noteText || null } : a
+        ),
+      };
+    });
+    setEditingNote(null);
+    setNoteText('');
+  }
+
   async function endConference(id: string) {
-    await supabase.from('conferences')
-      .update({ status: 'completed', ended_at: new Date().toISOString() })
-      .eq('id', id);
+    await supabase.from('conferences').update({
+      status: 'completed',
+      ended_at: new Date().toISOString(),
+    }).eq('id', id);
     setActiveAttendance(null);
     load();
   }
@@ -185,18 +197,15 @@ export default function ConferencesPage() {
 
   return (
     <div className="space-y-6 max-w-4xl">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Konferenzen</h1>
           <p className="text-gray-400 text-sm mt-1">{conferences.length} Konferenzen gesamt</p>
         </div>
         {canManage && (
-          <button
-            onClick={() => setShowForm(!showForm)}
+          <button onClick={() => setShowForm(!showForm)}
             className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg
-                       transition text-sm flex items-center gap-2"
-          >
+                       transition text-sm flex items-center gap-2">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
@@ -205,34 +214,27 @@ export default function ConferencesPage() {
         )}
       </div>
 
-      {/* Neue Konferenz Formular */}
+      {/* Neue Konferenz */}
       {showForm && (
         <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5 space-y-4">
           <h3 className="text-white font-medium">Neue Konferenz ankündigen</h3>
-          <input
-            value={form.title}
+          <input value={form.title}
             onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
             placeholder="Titel der Konferenz..."
             className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5
-                       text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500"
-          />
-          <textarea
-            value={form.description}
+                       text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500" />
+          <textarea value={form.description}
             onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
             placeholder="Beschreibung (optional)..."
             rows={2}
             className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5
-                       text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none"
-          />
+                       text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
           <div>
             <label className="text-gray-400 text-xs mb-1 block">Datum & Uhrzeit</label>
-            <input
-              type="datetime-local"
-              value={form.scheduled_at}
+            <input type="datetime-local" value={form.scheduled_at}
               onChange={e => setForm(p => ({ ...p, scheduled_at: e.target.value }))}
               className="bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2 text-white text-sm
-                         focus:outline-none focus:border-blue-500"
-            />
+                         focus:outline-none focus:border-blue-500" />
           </div>
           <div className="flex justify-end gap-2">
             <button onClick={() => setShowForm(false)}
@@ -250,50 +252,100 @@ export default function ConferencesPage() {
       {/* Anwesenheitsliste Modal */}
       {activeAttendance && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1a1d27] border border-white/10 rounded-2xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+          <div className="bg-[#1a1d27] border border-white/10 rounded-2xl p-6 w-full max-w-2xl max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-white font-bold text-lg">{activeAttendance.conference.title}</h2>
-                <p className="text-green-400 text-sm">Konferenz läuft</p>
+                <p className={activeAttendance.conference.status === 'active' ? 'text-green-400 text-sm' : 'text-gray-400 text-sm'}>
+                  {activeAttendance.conference.status === 'active' ? 'Konferenz läuft' : 'Abgeschlossen'}
+                </p>
               </div>
-              <button
-                onClick={() => endConference(activeAttendance.conference.id)}
-                className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30
-                           font-medium px-4 py-2 rounded-lg transition text-sm"
-              >
-                Konferenz beenden
-              </button>
+              <div className="flex gap-2">
+                {activeAttendance.conference.status === 'active' && canManage && (
+                  <button onClick={() => endConference(activeAttendance.conference.id)}
+                    className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30
+                               font-medium px-4 py-2 rounded-lg transition text-sm">
+                    Konferenz beenden
+                  </button>
+                )}
+                <button onClick={() => setActiveAttendance(null)}
+                  className="text-gray-400 hover:text-white transition">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             <h3 className="text-gray-400 text-sm font-medium mb-3">Anwesenheitsliste</h3>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {activeAttendance.attendance.map(a => (
-                <div key={a.user_id}
-                  className="flex items-center justify-between bg-[#0f1117] rounded-lg px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full
-                                    flex items-center justify-center text-white font-bold text-xs">
-                      {a.profiles?.username.charAt(0).toUpperCase()}
+                <div key={a.user_id} className="bg-[#0f1117] rounded-lg px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full
+                                      flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                        {a.profiles?.username.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="text-white text-sm font-medium">{a.profiles?.username}</p>
+                        {a.profiles?.role && <RoleBadge role={a.profiles.role as UserRole} size="xs" />}
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-white text-sm font-medium">{a.profiles?.username}</p>
-                      {a.profiles?.role && <RoleBadge role={a.profiles.role as UserRole} size="xs" />}
-                    </div>
+                    {canManage && activeAttendance.conference.status === 'active' ? (
+                      <div className="flex gap-2">
+                        {(['present', 'excused', 'absent'] as AttendanceStatus[]).map(status => (
+                          <button key={status}
+                            onClick={() => updateAttendance(activeAttendance.conference.id, a.user_id, status)}
+                            className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition
+                              ${a.status === status
+                                ? ATTENDANCE_STYLES[status]
+                                : 'bg-white/5 text-gray-500 border-white/10 hover:bg-white/10'}`}>
+                            {ATTENDANCE_LABELS[status]}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className={`text-xs px-2 py-1 rounded border ${ATTENDANCE_STYLES[a.status]}`}>
+                        {ATTENDANCE_LABELS[a.status]}
+                      </span>
+                    )}
                   </div>
-                  <div className="flex gap-2">
-                    {(['present', 'excused', 'absent'] as AttendanceStatus[]).map(status => (
-                      <button
-                        key={status}
-                        onClick={() => updateAttendance(activeAttendance.conference.id, a.user_id, status)}
-                        className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition
-                          ${a.status === status
-                            ? ATTENDANCE_STYLES[status]
-                            : 'bg-white/5 text-gray-500 border-white/10 hover:bg-white/10'
-                          }`}
-                      >
-                        {ATTENDANCE_LABELS[status]}
-                      </button>
-                    ))}
+
+                  {/* Bemerkung */}
+                  <div className="mt-2 ml-11">
+                    {editingNote === a.user_id ? (
+                      <div className="flex gap-2">
+                        <input
+                          value={noteText}
+                          onChange={e => setNoteText(e.target.value)}
+                          placeholder="Bemerkung..."
+                          className="flex-1 bg-[#1a1d27] border border-white/10 rounded-lg px-3 py-1.5
+                                     text-white text-xs focus:outline-none focus:border-blue-500"
+                        />
+                        <button
+                          onClick={() => saveNote(activeAttendance.conference.id, a.user_id)}
+                          className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-lg transition">
+                          Speichern
+                        </button>
+                        <button
+                          onClick={() => { setEditingNote(null); setNoteText(''); }}
+                          className="bg-white/5 hover:bg-white/10 text-gray-300 text-xs px-3 py-1.5 rounded-lg transition">
+                          Abbrechen
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        {a.note && <p className="text-gray-400 text-xs">{a.note}</p>}
+                        {canManage && (
+                          <button
+                            onClick={() => { setEditingNote(a.user_id); setNoteText(a.note || ''); }}
+                            className="text-gray-500 hover:text-blue-400 text-xs transition">
+                            {a.note ? 'Bearbeiten' : '+ Bemerkung'}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -308,30 +360,23 @@ export default function ConferencesPage() {
           <div className="bg-[#1a1d27] border border-white/10 rounded-2xl p-6 w-full max-w-md">
             <h2 className="text-white font-bold text-lg mb-5">Konferenz bearbeiten</h2>
             <div className="space-y-4">
-              <input
-                value={editForm.title}
+              <input value={editForm.title}
                 onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))}
                 placeholder="Titel..."
                 className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5
-                           text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500"
-              />
-              <textarea
-                value={editForm.description}
+                           text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500" />
+              <textarea value={editForm.description}
                 onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))}
                 placeholder="Beschreibung..."
                 rows={2}
                 className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5
-                           text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none"
-              />
+                           text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
               <div>
                 <label className="text-gray-400 text-xs mb-1 block">Datum & Uhrzeit</label>
-                <input
-                  type="datetime-local"
-                  value={editForm.scheduled_at}
+                <input type="datetime-local" value={editForm.scheduled_at}
                   onChange={e => setEditForm(p => ({ ...p, scheduled_at: e.target.value }))}
                   className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2
-                             text-white text-sm focus:outline-none focus:border-blue-500"
-                />
+                             text-white text-sm focus:outline-none focus:border-blue-500" />
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button onClick={() => setEditConference(null)}
@@ -363,83 +408,70 @@ export default function ConferencesPage() {
                       {STATUS_LABELS[conf.status]}
                     </span>
                   </div>
-                  {conf.description && (
-                    <p className="text-gray-400 text-sm mb-2">{conf.description}</p>
-                  )}
+                  {conf.description && <p className="text-gray-400 text-sm mb-2">{conf.description}</p>}
                   <div className="flex items-center gap-4 text-xs text-gray-500">
-                    <span>
-                      📅 {new Date(conf.scheduled_at).toLocaleString('de-DE', {
-                        day: '2-digit', month: '2-digit', year: 'numeric',
-                        hour: '2-digit', minute: '2-digit',
-                      })}
-                    </span>
-                    {conf.profiles && (
-                      <span>👤 {conf.profiles.username}</span>
-                    )}
+                    <span>📅 {new Date(conf.scheduled_at).toLocaleString('de-DE', {
+                      day: '2-digit', month: '2-digit', year: 'numeric',
+                      hour: '2-digit', minute: '2-digit',
+                    })}</span>
+                    {conf.profiles && <span>👤 {conf.profiles.username}</span>}
                   </div>
                 </div>
 
-                {canManage && (
-                  <div className="flex gap-2 flex-shrink-0 flex-wrap justify-end">
-                    {conf.status === 'scheduled' && (
-                      <>
-                        <button
-                          onClick={() => startConference(conf)}
-                          className="bg-green-500/10 hover:bg-green-500/20 text-green-400 border
-                                     border-green-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition"
-                        >
-                          Starten
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEditConference(conf);
-                            setEditForm({
-                              title: conf.title,
-                              description: conf.description || '',
-                              scheduled_at: conf.scheduled_at.slice(0, 16),
-                            });
-                          }}
-                          className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border
-                                     border-blue-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition"
-                        >
-                          Bearbeiten
-                        </button>
-                        <button
-                          onClick={() => cancelConference(conf.id)}
-                          className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border
-                                     border-red-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition"
-                        >
-                          Absagen
-                        </button>
-                      </>
-                    )}
-                    {conf.status === 'active' && (
-                      <button
-                        onClick={() => startConference(conf)}
+                <div className="flex gap-2 flex-shrink-0 flex-wrap justify-end">
+                  {conf.status === 'scheduled' && canManage && (
+                    <>
+                      <button onClick={() => startConference(conf)}
                         className="bg-green-500/10 hover:bg-green-500/20 text-green-400 border
-                                   border-green-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition"
-                      >
-                        Anwesenheit
+                                   border-green-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
+                        Starten
                       </button>
-                    )}
-                    {(conf.status === 'completed' || conf.status === 'cancelled') && (
-                      <button
-                        onClick={() => deleteConference(conf.id)}
+                      <button onClick={() => {
+                        setEditConference(conf);
+                        setEditForm({
+                          title: conf.title,
+                          description: conf.description || '',
+                          scheduled_at: conf.scheduled_at.slice(0, 16),
+                        });
+                      }}
+                        className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border
+                                   border-blue-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
+                        Bearbeiten
+                      </button>
+                      <button onClick={() => cancelConference(conf.id)}
                         className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border
-                                   border-red-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition"
-                      >
-                        Löschen
+                                   border-red-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
+                        Absagen
                       </button>
-                    )}
-                  </div>
-                )}
+                    </>
+                  )}
+                  {conf.status === 'active' && canManage && (
+                    <button onClick={() => openAttendance(conf)}
+                      className="bg-green-500/10 hover:bg-green-500/20 text-green-400 border
+                                 border-green-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
+                      Anwesenheit
+                    </button>
+                  )}
+                  {conf.status === 'completed' && (
+                    <button onClick={() => openAttendance(conf)}
+                      className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border
+                                 border-blue-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
+                      Anwesenheit ansehen
+                    </button>
+                  )}
+                  {(conf.status === 'completed' || conf.status === 'cancelled') && canManage && (
+                    <button onClick={() => deleteConference(conf.id)}
+                      className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border
+                                 border-red-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
+                      Löschen
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}
           {conferences.length === 0 && (
-            <div className="text-center py-8 text-gray-500 text-sm">
-              Keine Konferenzen geplant
-            </div>
+            <div className="text-center py-8 text-gray-500 text-sm">Keine Konferenzen geplant</div>
           )}
         </div>
       )}
