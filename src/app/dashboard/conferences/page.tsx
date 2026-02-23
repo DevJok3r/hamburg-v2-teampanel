@@ -32,6 +32,15 @@ const ATTENDANCE_LABELS = {
   absent:  'Abwesend',
 };
 
+type ConferenceStatus = 'scheduled' | 'active' | 'completed' | 'cancelled';
+
+const CATEGORIES: { key: ConferenceStatus; label: string; icon: string }[] = [
+  { key: 'scheduled', label: 'Geplant',        icon: '📅' },
+  { key: 'active',    label: 'Aktiv',           icon: '🟢' },
+  { key: 'completed', label: 'Abgeschlossen',   icon: '✅' },
+  { key: 'cancelled', label: 'Abgesagt',        icon: '❌' },
+];
+
 export default function ConferencesPage() {
   const [conferences, setConferences]           = useState<Conference[]>([]);
   const [members, setMembers]                   = useState<Profile[]>([]);
@@ -40,6 +49,7 @@ export default function ConferencesPage() {
   const [loading, setLoading]                   = useState(true);
   const [showForm, setShowForm]                 = useState(false);
   const [editConference, setEditConference]     = useState<Conference | null>(null);
+  const [activeTab, setActiveTab]               = useState<ConferenceStatus>('scheduled');
   const [activeAttendance, setActiveAttendance] = useState<{
     conference: Conference;
     attendance: ConferenceAttendance[];
@@ -133,6 +143,7 @@ export default function ConferencesPage() {
       conference: { ...conference, status: 'active' },
       attendance: attendance || [],
     });
+    setActiveTab('active');
     load();
   }
 
@@ -141,7 +152,6 @@ export default function ConferencesPage() {
       .from('conference_attendance')
       .select('*, profiles!conference_attendance_user_id_fkey(username, role)')
       .eq('conference_id', conference.id);
-
     setActiveAttendance({ conference, attendance: attendance || [] });
   }
 
@@ -187,6 +197,7 @@ export default function ConferencesPage() {
       ended_at: new Date().toISOString(),
     }).eq('id', id);
     setActiveAttendance(null);
+    setActiveTab('completed');
     load();
   }
 
@@ -194,6 +205,8 @@ export default function ConferencesPage() {
     await supabase.from('conferences').delete().eq('id', id);
     load();
   }
+
+  const filteredConferences = conferences.filter(c => c.status === activeTab);
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -277,6 +290,18 @@ export default function ConferencesPage() {
               </div>
             </div>
 
+            {/* Statistik */}
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              {(['present', 'excused', 'absent'] as AttendanceStatus[]).map(s => (
+                <div key={s} className={`rounded-lg p-3 border text-center ${ATTENDANCE_STYLES[s]}`}>
+                  <p className="text-lg font-bold">
+                    {activeAttendance.attendance.filter(a => a.status === s).length}
+                  </p>
+                  <p className="text-xs">{ATTENDANCE_LABELS[s]}</p>
+                </div>
+              ))}
+            </div>
+
             <h3 className="text-gray-400 text-sm font-medium mb-3">Anwesenheitsliste</h3>
             <div className="space-y-3">
               {activeAttendance.attendance.map(a => (
@@ -312,24 +337,19 @@ export default function ConferencesPage() {
                     )}
                   </div>
 
-                  {/* Bemerkung */}
                   <div className="mt-2 ml-11">
                     {editingNote === a.user_id ? (
                       <div className="flex gap-2">
-                        <input
-                          value={noteText}
+                        <input value={noteText}
                           onChange={e => setNoteText(e.target.value)}
                           placeholder="Bemerkung..."
                           className="flex-1 bg-[#1a1d27] border border-white/10 rounded-lg px-3 py-1.5
-                                     text-white text-xs focus:outline-none focus:border-blue-500"
-                        />
-                        <button
-                          onClick={() => saveNote(activeAttendance.conference.id, a.user_id)}
+                                     text-white text-xs focus:outline-none focus:border-blue-500" />
+                        <button onClick={() => saveNote(activeAttendance.conference.id, a.user_id)}
                           className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-lg transition">
                           Speichern
                         </button>
-                        <button
-                          onClick={() => { setEditingNote(null); setNoteText(''); }}
+                        <button onClick={() => { setEditingNote(null); setNoteText(''); }}
                           className="bg-white/5 hover:bg-white/10 text-gray-300 text-xs px-3 py-1.5 rounded-lg transition">
                           Abbrechen
                         </button>
@@ -338,8 +358,7 @@ export default function ConferencesPage() {
                       <div className="flex items-center gap-2">
                         {a.note && <p className="text-gray-400 text-xs">{a.note}</p>}
                         {canManage && (
-                          <button
-                            onClick={() => { setEditingNote(a.user_id); setNoteText(a.note || ''); }}
+                          <button onClick={() => { setEditingNote(a.user_id); setNoteText(a.note || ''); }}
                             className="text-gray-500 hover:text-blue-400 text-xs transition">
                             {a.note ? 'Bearbeiten' : '+ Bemerkung'}
                           </button>
@@ -393,12 +412,38 @@ export default function ConferencesPage() {
         </div>
       )}
 
+      {/* Kategorie Tabs */}
+      <div className="flex gap-2 flex-wrap">
+        {CATEGORIES.map(cat => {
+          const count = conferences.filter(c => c.status === cat.key).length;
+          return (
+            <button key={cat.key}
+              onClick={() => setActiveTab(cat.key)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition
+                ${activeTab === cat.key
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white/5 text-gray-400 hover:bg-white/10'}`}>
+              <span>{cat.icon}</span>
+              {cat.label}
+              <span className={`text-xs px-1.5 py-0.5 rounded-full
+                ${activeTab === cat.key ? 'bg-white/20' : 'bg-white/10'}`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Konferenz Liste */}
       {loading ? (
         <div className="text-gray-400 text-center py-12">Lade...</div>
+      ) : filteredConferences.length === 0 ? (
+        <div className="text-center py-8 text-gray-500 text-sm">
+          Keine {STATUS_LABELS[activeTab].toLowerCase()} Konferenzen
+        </div>
       ) : (
         <div className="space-y-3">
-          {conferences.map(conf => (
+          {filteredConferences.map(conf => (
             <div key={conf.id} className="bg-[#1a1d27] border border-white/10 rounded-xl p-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
@@ -470,9 +515,6 @@ export default function ConferencesPage() {
               </div>
             </div>
           ))}
-          {conferences.length === 0 && (
-            <div className="text-center py-8 text-gray-500 text-sm">Keine Konferenzen geplant</div>
-          )}
         </div>
       )}
     </div>
