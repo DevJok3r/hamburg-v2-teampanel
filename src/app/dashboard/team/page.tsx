@@ -121,8 +121,14 @@ export default function TeamPage() {
     load();
   }
 
-  async function changeRole() {
-    if (!selectedMember) return;
+async function changeRole() {
+    if (!selectedMember || !myRole) return;
+    const hierarchy: Record<UserRole, number> = {
+      top_management: 100, management: 80, junior_management: 60,
+      moderation_team: 20, development_team: 20, social_media_team: 20, event_team: 20,
+    };
+    // Darf keine Rolle vergeben die höher oder gleich der eigenen ist (außer Top Management)
+    if (myRole !== 'top_management' && hierarchy[selectedRole] >= hierarchy[myRole]) return;
     await supabase.from('profiles')
       .update({ role: selectedRole })
       .eq('id', selectedMember.id);
@@ -273,7 +279,14 @@ export default function TeamPage() {
                     className="w-full bg-[#1a1d27] border border-white/10 rounded-lg px-3 py-2.5
                                text-white text-sm focus:outline-none focus:border-blue-500"
                   >
-                    {allRoles.map(r => (
+{allRoles.filter(r => {
+                      if (myRole === 'top_management') return true;
+                      const hierarchy: Record<UserRole, number> = {
+                        top_management: 100, management: 80, junior_management: 60,
+                        moderation_team: 20, development_team: 20, social_media_team: 20, event_team: 20,
+                      };
+                      return hierarchy[r] < (hierarchy[myRole!] ?? 0);
+                    }).map(r => (
                       <option key={r} value={r}>{ROLE_LABELS[r]}</option>
                     ))}
                   </select>
