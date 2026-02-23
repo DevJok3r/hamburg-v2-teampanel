@@ -50,7 +50,7 @@ export default function Sidebar({ profile }: SidebarProps) {
         {navItems.filter(i => i.show).map((item) => {
           const isActive = pathname === item.href;
           return (
-            <Link key={item.href} href={item.href} className={lex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all \}>
+            <Link key={item.href} href={item.href} className={isActive ? 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium bg-blue-600 text-white' : 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-white'}>
               <svg className='w-4 h-4 flex-shrink-0' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
                 <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d={item.icon} />
               </svg>
