@@ -253,7 +253,7 @@ export default function EvaluationsPage() {
                         <p className="text-gray-500 text-xs mt-0.5">{cat.desc}</p>
                       </div>
                       <ScoreSelector
-                        value={form[cat.key] as number | null}
+                        value={form[cat.key as keyof typeof form] as number | null}
                         onChange={v => setForm(p => ({ ...p, [cat.key]: v }))}
                         disabled={false}
                       />
