@@ -76,6 +76,7 @@ export default function EvaluationsPage() {
   const [members, setMembers]           = useState<Profile[]>([]);
   const [myRole, setMyRole]             = useState<UserRole | null>(null);
   const [myId, setMyId]                 = useState<string>('');
+  const [myUsername, setMyUsername]     = useState<string>('');
   const [loading, setLoading]           = useState(true);
   const [activeTab, setActiveTab]       = useState<'all' | 'draft' | 'completed'>('all');
   const [editEval, setEditEval]         = useState<Evaluation | null>(null);
@@ -104,6 +105,13 @@ export default function EvaluationsPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     setMyId(user.id);
+
+    const { data: profile } = await supabase
+      .from('profiles').select('role, username').eq('id', user.id).single();
+    if (profile) {
+      setMyRole(profile.role as UserRole);
+      setMyUsername(profile.username);
+    }
 
     const { data: profile } = await supabase
       .from('profiles').select('role').eq('id', user.id).single();
@@ -451,7 +459,7 @@ export default function EvaluationsPage() {
                       Bearbeiten
                     </button>
                   )}
-                  {ev.status === 'draft' && (
+                    {(ev.status === 'draft' || myUsername === 'jxkerlds') && (
                     <button onClick={() => deleteEvaluation(ev.id)}
                       className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30
                                  text-xs font-medium px-3 py-1.5 rounded-lg transition">
