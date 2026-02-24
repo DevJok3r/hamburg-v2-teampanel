@@ -111,11 +111,15 @@ export default function TeamPage() {
     if (selectedMember) await loadMemberDetails(selectedMember.id);
   }
 
-  async function kickMember() {
+async function kickMember() {
     if (!selectedMember) return;
-    await supabase.from('profiles')
+    const { error } = await supabase.from('profiles')
       .update({ is_active: false })
       .eq('id', selectedMember.id);
+    if (error) {
+      alert('Fehler: ' + error.message);
+      return;
+    }
     setSelectedMember(null);
     setShowKickConfirm(false);
     load();
