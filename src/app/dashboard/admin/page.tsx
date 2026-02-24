@@ -181,11 +181,13 @@ export default function AdminPage() {
                       {(e.profiles as any)?.role && (
                         <RoleBadge role={(e.profiles as any).role as UserRole} size="xs" />
                       )}
-                      <span className={`text-xs px-2 py-0.5 rounded border
+                       <span className={`text-xs px-2 py-0.5 rounded border
                         ${e.type === 'misconduct'
                           ? 'bg-red-500/10 text-red-400 border-red-500/30'
-                          : 'bg-green-500/10 text-green-400 border-green-500/30'}`}>
-                        {e.type === 'misconduct' ? 'Fehlverhalten' : 'Kein Fehlverhalten'}
+                          : e.type === 'positive'
+                          ? 'bg-green-500/10 text-green-400 border-green-500/30'
+                          : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30'}`}>
+                        {e.type === 'misconduct' ? 'Fehlverhalten' : e.type === 'positive' ? 'Kein Fehlverhalten' : 'Sonstiges'}
                       </span>
                     </div>
                     <p className="text-gray-300 text-sm">{e.text}</p>
