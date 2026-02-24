@@ -366,7 +366,7 @@ export default function ConferencesPage() {
                         ))}
                       </div>
                     ) : (
-                      <span className={`text-xs px-2 py-1 rounded border ${ATTENDANCE_STYLES[a.status]}`}>{ATTENDANCE_LABELS[a.status]}</span>
+                      <span className={`text-xs px-2 py-1 rounded border ${ATTENDANCE_STYLES[a.status as AttendanceStatus]}`}>{ATTENDANCE_LABELS[a.status as AttendanceStatus]}</span>
                     )}
                   </div>
                   <div className="mt-2 ml-11">
