@@ -264,7 +264,7 @@ export default function EvaluationsPage() {
 
               {/* Durchschnitt Vorschau */}
               {(() => {
-                const scores = CATEGORIES.map(c => form[c.key] as number | null).filter(s => s !== null) as number[];
+                const scores = CATEGORIES.map(c => form[c.key as keyof typeof form] as number | null).filter(s => s !== null) as number[];
                 const avg = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
                 const grade = getGrade(avg ? Math.round(avg * 100) / 100 : null);
                 return avg !== null ? (
