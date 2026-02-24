@@ -258,7 +258,7 @@ export default function ConferencesPage() {
                 <label key={m.id} className="flex items-center gap-2 cursor-pointer hover:bg-white/5 rounded px-2 py-1">
                   <input type="checkbox"
                     checked={data.extra_user_ids.includes(m.id)}
-                    onChange={() => toggleUser(m.id, data.extra_user_ids, (v) => setData((p: any) => ({ ...p, extra_user_ids: v }))}
+                    onChange={() => toggleUser(m.id, data.extra_user_ids, (v) => setData((p: any) => ({ ...p, extra_user_ids: v })))}
                     className="rounded" />
                   <span className="text-white text-xs">{m.username}</span>
                   <RoleBadge role={m.role as UserRole} size="xs" />
