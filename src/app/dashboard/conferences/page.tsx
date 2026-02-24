@@ -35,10 +35,10 @@ const ATTENDANCE_LABELS = {
 type ConferenceStatus = 'scheduled' | 'active' | 'completed' | 'cancelled';
 
 const CATEGORIES: { key: ConferenceStatus; label: string; icon: string }[] = [
-  { key: 'scheduled', label: 'Geplant',        icon: '📅' },
-  { key: 'active',    label: 'Aktiv',           icon: '🟢' },
-  { key: 'completed', label: 'Abgeschlossen',   icon: '✅' },
-  { key: 'cancelled', label: 'Abgesagt',        icon: '❌' },
+  { key: 'scheduled', label: 'Geplant',      icon: '📅' },
+  { key: 'active',    label: 'Aktiv',         icon: '🟢' },
+  { key: 'completed', label: 'Abgeschlossen', icon: '✅' },
+  { key: 'cancelled', label: 'Abgesagt',      icon: '❌' },
 ];
 
 export default function ConferencesPage() {
@@ -46,6 +46,7 @@ export default function ConferencesPage() {
   const [members, setMembers]                   = useState<Profile[]>([]);
   const [myRole, setMyRole]                     = useState<UserRole | null>(null);
   const [myId, setMyId]                         = useState<string>('');
+  const [myUsername, setMyUsername]             = useState<string>('');
   const [loading, setLoading]                   = useState(true);
   const [showForm, setShowForm]                 = useState(false);
   const [editConference, setEditConference]     = useState<Conference | null>(null);
@@ -62,14 +63,27 @@ export default function ConferencesPage() {
 
   const supabase = createClientSupabaseClient();
 
+  async function fireAutomation(trigger: string, data: Record<string, string>) {
+    try {
+      await fetch('/api/automations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trigger, data }),
+      });
+    } catch {}
+  }
+
   async function load() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     setMyId(user.id);
 
     const { data: profile } = await supabase
-      .from('profiles').select('role').eq('id', user.id).single();
-    if (profile) setMyRole(profile.role as UserRole);
+      .from('profiles').select('role, username').eq('id', user.id).single();
+    if (profile) {
+      setMyRole(profile.role as UserRole);
+      setMyUsername(profile.username);
+    }
 
     const { data: confs } = await supabase
       .from('conferences')
@@ -97,6 +111,11 @@ export default function ConferencesPage() {
       scheduled_at: form.scheduled_at,
       created_by: myId,
     });
+    await fireAutomation('conference_created', {
+      titel:     form.title,
+      datum:     new Date(form.scheduled_at).toLocaleString('de-DE'),
+      ersteller: myUsername,
+    });
     setForm({ title: '', description: '', scheduled_at: '' });
     setShowForm(false);
     load();
@@ -109,12 +128,22 @@ export default function ConferencesPage() {
       description: editForm.description || null,
       scheduled_at: editForm.scheduled_at,
     }).eq('id', editConference.id);
+    await fireAutomation('conference_updated', {
+      titel:     editForm.title,
+      datum:     new Date(editForm.scheduled_at).toLocaleString('de-DE'),
+      ersteller: myUsername,
+    });
     setEditConference(null);
     load();
   }
 
   async function cancelConference(id: string) {
+    const conf = conferences.find(c => c.id === id);
     await supabase.from('conferences').update({ status: 'cancelled' }).eq('id', id);
+    await fireAutomation('conference_cancelled', {
+      titel:     conf?.title || '',
+      ersteller: myUsername,
+    });
     load();
   }
 
@@ -133,6 +162,12 @@ export default function ConferencesPage() {
 
     await supabase.from('conference_attendance')
       .upsert(attendanceRows, { onConflict: 'conference_id,user_id' });
+
+    await fireAutomation('conference_started', {
+      titel:     conference.title,
+      datum:     new Date().toLocaleString('de-DE'),
+      ersteller: myUsername,
+    });
 
     const { data: attendance } = await supabase
       .from('conference_attendance')
@@ -196,6 +231,10 @@ export default function ConferencesPage() {
       status: 'completed',
       ended_at: new Date().toISOString(),
     }).eq('id', id);
+    await fireAutomation('conference_ended', {
+      titel:     activeAttendance?.conference.title || '',
+      ersteller: myUsername,
+    });
     setActiveAttendance(null);
     setActiveTab('completed');
     load();
@@ -290,7 +329,6 @@ export default function ConferencesPage() {
               </div>
             </div>
 
-            {/* Statistik */}
             <div className="grid grid-cols-3 gap-3 mb-4">
               {(['present', 'excused', 'absent'] as AttendanceStatus[]).map(s => (
                 <div key={s} className={`rounded-lg p-3 border text-center ${ATTENDANCE_STYLES[s]}`}>
@@ -336,7 +374,6 @@ export default function ConferencesPage() {
                       </span>
                     )}
                   </div>
-
                   <div className="mt-2 ml-11">
                     {editingNote === a.user_id ? (
                       <div className="flex gap-2">
@@ -425,8 +462,7 @@ export default function ConferencesPage() {
                   : 'bg-white/5 text-gray-400 hover:bg-white/10'}`}>
               <span>{cat.icon}</span>
               {cat.label}
-              <span className={`text-xs px-1.5 py-0.5 rounded-full
-                ${activeTab === cat.key ? 'bg-white/20' : 'bg-white/10'}`}>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${activeTab === cat.key ? 'bg-white/20' : 'bg-white/10'}`}>
                 {count}
               </span>
             </button>
@@ -462,7 +498,6 @@ export default function ConferencesPage() {
                     {conf.profiles && <span>👤 {conf.profiles.username}</span>}
                   </div>
                 </div>
-
                 <div className="flex gap-2 flex-shrink-0 flex-wrap justify-end">
                   {conf.status === 'scheduled' && canManage && (
                     <>

@@ -14,16 +14,27 @@ const STATUS_STYLES = {
 const STATUS_LABELS = { pending: 'Ausstehend', approved: 'Genehmigt', rejected: 'Abgelehnt' };
 
 export default function AbsencesPage() {
-  const [absences, setAbsences]         = useState<Absence[]>([]);
-  const [myRole, setMyRole]             = useState<UserRole | null>(null);
-  const [myId, setMyId]                 = useState<string>('');
-  const [showForm, setShowForm]         = useState(false);
-  const [editAbsence, setEditAbsence]   = useState<Absence | null>(null);
-  const [form, setForm]                 = useState({ from_date: '', to_date: '', reason: '' });
-  const [editForm, setEditForm]         = useState({ from_date: '', to_date: '', reason: '' });
-  const [loading, setLoading]           = useState(true);
+  const [absences, setAbsences]       = useState<Absence[]>([]);
+  const [myRole, setMyRole]           = useState<UserRole | null>(null);
+  const [myId, setMyId]               = useState<string>('');
+  const [myUsername, setMyUsername]   = useState<string>('');
+  const [showForm, setShowForm]       = useState(false);
+  const [editAbsence, setEditAbsence] = useState<Absence | null>(null);
+  const [form, setForm]               = useState({ from_date: '', to_date: '', reason: '' });
+  const [editForm, setEditForm]       = useState({ from_date: '', to_date: '', reason: '' });
+  const [loading, setLoading]         = useState(true);
 
   const supabase = createClientSupabaseClient();
+
+  async function fireAutomation(trigger: string, data: Record<string, string>) {
+    try {
+      await fetch('/api/automations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trigger, data }),
+      });
+    } catch {}
+  }
 
   async function load() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -32,11 +43,14 @@ export default function AbsencesPage() {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, username')
       .eq('id', user.id)
       .single();
 
-    if (profile) setMyRole(profile.role as UserRole);
+    if (profile) {
+      setMyRole(profile.role as UserRole);
+      setMyUsername(profile.username);
+    }
 
     const { data } = await supabase
       .from('absences')
@@ -57,6 +71,12 @@ export default function AbsencesPage() {
       to_date: form.to_date,
       reason: form.reason,
     });
+    await fireAutomation('absence_created', {
+      mitglied: myUsername,
+      von:      new Date(form.from_date).toLocaleString('de-DE'),
+      bis:      new Date(form.to_date).toLocaleString('de-DE'),
+      grund:    form.reason,
+    });
     setForm({ from_date: '', to_date: '', reason: '' });
     setShowForm(false);
     load();
@@ -74,16 +94,29 @@ export default function AbsencesPage() {
   }
 
   async function deleteAbsence(id: string) {
+    const absence = absences.find(a => a.id === id);
     await supabase.from('absences').delete().eq('id', id);
+    await fireAutomation('absence_deleted', {
+      mitglied: (absence?.profiles as any)?.username || '',
+      grund:    absence?.reason || '',
+    });
     load();
   }
 
   async function reviewAbsence(id: string, status: 'approved' | 'rejected') {
+    const absence = absences.find(a => a.id === id);
     await supabase.from('absences').update({
       status,
       reviewed_by: myId,
       reviewed_at: new Date().toISOString(),
     }).eq('id', id);
+    await fireAutomation(status === 'approved' ? 'absence_approved' : 'absence_rejected', {
+      mitglied: (absence?.profiles as any)?.username || '',
+      von:      absence ? new Date(absence.from_date).toLocaleString('de-DE') : '',
+      bis:      absence ? new Date(absence.to_date).toLocaleString('de-DE') : '',
+      grund:    absence?.reason || '',
+      status:   status === 'approved' ? 'Genehmigt' : 'Abgelehnt',
+    });
     load();
   }
 
@@ -234,7 +267,6 @@ export default function AbsencesPage() {
                 </div>
 
                 <div className="flex gap-2 flex-shrink-0 flex-wrap justify-end">
-                  {/* Bearbeiten – eigene pending Abmeldung oder Management */}
                   {(absence.user_id === myId && absence.status === 'pending') || canReview ? (
                     <button
                       onClick={() => {
@@ -252,7 +284,6 @@ export default function AbsencesPage() {
                     </button>
                   ) : null}
 
-                  {/* Review Buttons */}
                   {canReview && absence.status === 'pending' && absence.user_id !== myId && (
                     <>
                       <button onClick={() => reviewAbsence(absence.id, 'approved')}
@@ -268,7 +299,6 @@ export default function AbsencesPage() {
                     </>
                   )}
 
-                  {/* Löschen – eigene oder Management */}
                   {(absence.user_id === myId || canReview) && (
                     <button
                       onClick={() => deleteAbsence(absence.id)}
