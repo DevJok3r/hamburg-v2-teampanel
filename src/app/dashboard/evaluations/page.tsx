@@ -113,10 +113,6 @@ export default function EvaluationsPage() {
       setMyUsername(profile.username);
     }
 
-    const { data: profile } = await supabase
-      .from('profiles').select('role').eq('id', user.id).single();
-    if (profile) setMyRole(profile.role as UserRole);
-
     const { data: evals } = await supabase
       .from('evaluations')
       .select('*, profiles!evaluations_user_id_fkey(username, role), evaluator:evaluator_id(username, role)')
