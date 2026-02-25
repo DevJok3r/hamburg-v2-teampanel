@@ -34,7 +34,6 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   discord: '💬 Discord',
   ingame:  '🎮 Ingame',
 };
-
 const LOG_TYPE_STYLES: Record<LogType, string> = {
   warn:   'bg-yellow-500/10 text-yellow-400 border-yellow-500/30',
   mute:   'bg-orange-500/10 text-orange-400 border-orange-500/30',
@@ -46,20 +45,13 @@ const LOG_TYPE_STYLES: Record<LogType, string> = {
 const LOG_TYPE_LABELS: Record<LogType, string> = {
   warn: 'Verwarnung', mute: 'Mute', kick: 'Kick', ban: 'Ban', report: 'Report', other: 'Sonstiges',
 };
-
-// Welche Felder für welchen Typ benötigt werden
-const TYPE_CONFIG: Record<LogType, {
-  needsDuration: boolean;
-  needsExpiry: boolean;
-  label: string;
-  icon: string;
-}> = {
-  warn:   { needsDuration: false, needsExpiry: true,  label: 'Verwarnung',  icon: '⚠️' },
-  mute:   { needsDuration: true,  needsExpiry: true,  label: 'Mute',        icon: '🔇' },
-  kick:   { needsDuration: false, needsExpiry: false, label: 'Kick',        icon: '👢' },
-  ban:    { needsDuration: true,  needsExpiry: true,  label: 'Ban',         icon: '🔨' },
-  report: { needsDuration: false, needsExpiry: false, label: 'Report',      icon: '📋' },
-  other:  { needsDuration: false, needsExpiry: false, label: 'Sonstiges',   icon: '📝' },
+const TYPE_CONFIG: Record<LogType, { needsDuration: boolean; needsExpiry: boolean; label: string; icon: string }> = {
+  warn:   { needsDuration: false, needsExpiry: true,  label: 'Verwarnung', icon: '⚠️' },
+  mute:   { needsDuration: true,  needsExpiry: true,  label: 'Mute',       icon: '🔇' },
+  kick:   { needsDuration: false, needsExpiry: false, label: 'Kick',       icon: '👢' },
+  ban:    { needsDuration: true,  needsExpiry: true,  label: 'Ban',        icon: '🔨' },
+  report: { needsDuration: false, needsExpiry: false, label: 'Report',     icon: '📋' },
+  other:  { needsDuration: false, needsExpiry: false, label: 'Sonstiges',  icon: '📝' },
 };
 
 const emptyForm = {
@@ -71,14 +63,13 @@ const emptyForm = {
 };
 
 export default function ModLogsPage() {
-  const [logs, setLogs]               = useState<ModLog[]>([]);
-  const [myRole, setMyRole]           = useState<UserRole | null>(null);
-  const [myId, setMyId]               = useState<string>('');
-  const [myUsername, setMyUsername]   = useState<string>('');
-  const [loading, setLoading]         = useState(true);
-  const [showForm, setShowForm]       = useState(false);
-  const [form, setForm]               = useState(emptyForm);
-  const [selectedLog, setSelectedLog] = useState<ModLog | null>(null);
+  const [logs, setLogs]                     = useState<ModLog[]>([]);
+  const [myRole, setMyRole]                 = useState<UserRole | null>(null);
+  const [myId, setMyId]                     = useState<string>('');
+  const [loading, setLoading]               = useState(true);
+  const [showForm, setShowForm]             = useState(false);
+  const [form, setForm]                     = useState(emptyForm);
+  const [selectedLog, setSelectedLog]       = useState<ModLog | null>(null);
   const [filterPlatform, setFilterPlatform] = useState<string>('all');
   const [filterType, setFilterType]         = useState<string>('all');
   const router = useRouter();
@@ -89,12 +80,11 @@ export default function ModLogsPage() {
     if (!user) return;
     setMyId(user.id);
     const { data: profile } = await supabase.from('profiles').select('role, username').eq('id', user.id).single();
+    if (!profile) { router.push('/dashboard'); return; }
     const role = profile.role as UserRole;
     const canAccess = isStaff(role) || role.includes('moderator');
-    if (!profile || !canAccess) { router.push('/dashboard'); return; }
-    const canDelete = role === 'top_management';
-    setMyRole(profile.role as UserRole);
-    setMyUsername(profile.username);
+    if (!canAccess) { router.push('/dashboard'); return; }
+    setMyRole(role);
     const { data } = await supabase
       .from('mod_logs')
       .select('*, profiles!mod_logs_moderator_id_fkey(username)')
@@ -170,8 +160,6 @@ export default function ModLogsPage() {
       {showForm && (
         <div className="bg-[#1a1d27] border border-white/10 rounded-2xl p-6 space-y-5">
           <h3 className="text-white font-bold text-lg">Neuer Moderations-Eintrag</h3>
-
-          {/* Schritt 1: Platform */}
           <div>
             <label className="text-gray-400 text-xs mb-2 block">1. Plattform auswählen *</label>
             <div className="flex gap-3">
@@ -185,7 +173,6 @@ export default function ModLogsPage() {
             </div>
           </div>
 
-          {/* Schritt 2: Typ */}
           {form.platform && (
             <div>
               <label className="text-gray-400 text-xs mb-2 block">2. Art des Eintrags *</label>
@@ -201,62 +188,53 @@ export default function ModLogsPage() {
             </div>
           )}
 
-          {/* Schritt 3: Spielerdaten */}
           {form.platform && form.log_type && (
             <>
               <div>
                 <label className="text-gray-400 text-xs mb-2 block">3. Spielerdaten</label>
                 <div className="grid grid-cols-2 gap-3">
-                  {(form.platform === 'ingame' || form.platform === 'discord') && (
-                    <>
-                      <div>
-                        <label className="text-gray-500 text-xs mb-1 block">Roblox Name</label>
-                        <input value={form.roblox_name} onChange={e => setForm(f => ({ ...f, roblox_name: e.target.value }))}
-                          placeholder="Roblox Benutzername..."
-                          className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-blue-500" />
-                      </div>
-                      <div>
-                        <label className="text-gray-500 text-xs mb-1 block">Roblox ID</label>
-                        <input value={form.roblox_id} onChange={e => setForm(f => ({ ...f, roblox_id: e.target.value }))}
-                          placeholder="Roblox User ID..."
-                          className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-blue-500" />
-                      </div>
-                      <div>
-                        <label className="text-gray-500 text-xs mb-1 block">Discord Name</label>
-                        <input value={form.discord_name} onChange={e => setForm(f => ({ ...f, discord_name: e.target.value }))}
-                          placeholder="Discord Benutzername..."
-                          className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-blue-500" />
-                      </div>
-                      <div>
-                        <label className="text-gray-500 text-xs mb-1 block">Discord ID</label>
-                        <input value={form.discord_id} onChange={e => setForm(f => ({ ...f, discord_id: e.target.value }))}
-                          placeholder="Discord User ID..."
-                          className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-blue-500" />
-                      </div>
-                    </>
-                  )}
+                  <div>
+                    <label className="text-gray-500 text-xs mb-1 block">Roblox Name</label>
+                    <input value={form.roblox_name} onChange={e => setForm(f => ({ ...f, roblox_name: e.target.value }))}
+                      placeholder="Roblox Benutzername..."
+                      className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="text-gray-500 text-xs mb-1 block">Roblox ID</label>
+                    <input value={form.roblox_id} onChange={e => setForm(f => ({ ...f, roblox_id: e.target.value }))}
+                      placeholder="Roblox User ID..."
+                      className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="text-gray-500 text-xs mb-1 block">Discord Name</label>
+                    <input value={form.discord_name} onChange={e => setForm(f => ({ ...f, discord_name: e.target.value }))}
+                      placeholder="Discord Benutzername..."
+                      className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="text-gray-500 text-xs mb-1 block">Discord ID</label>
+                    <input value={form.discord_id} onChange={e => setForm(f => ({ ...f, discord_id: e.target.value }))}
+                      placeholder="Discord User ID..."
+                      className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-blue-500" />
+                  </div>
                 </div>
               </div>
 
-              {/* Schritt 4: Grund & Details */}
               <div className="space-y-3">
                 <label className="text-gray-400 text-xs block">4. Details *</label>
                 <textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
                   placeholder="Grund / Beschreibung des Vorfalls..." rows={3}
                   className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-blue-500 resize-none" />
-
                 {config?.needsDuration && (
                   <input value={form.duration} onChange={e => setForm(f => ({ ...f, duration: e.target.value }))}
                     placeholder="Dauer (z.B. 7 Tage, Permanent)..."
                     className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-blue-500" />
                 )}
-
                 {config?.needsExpiry && (
                   <input value={form.expires_at} onChange={e => setForm(f => ({ ...f, expires_at: e.target.value }))}
                     placeholder="Ablaufdatum (z.B. 01.03.2026)..."
                     className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-blue-500" />
                 )}
-
                 <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                   placeholder="Zusätzliche Notizen (optional)..." rows={2}
                   className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-blue-500 resize-none" />
@@ -350,7 +328,7 @@ export default function ModLogsPage() {
                   <p className="text-gray-500 text-xs">Eingetragen von <span className="text-gray-400">{(selectedLog.profiles as any)?.username}</span></p>
                   <p className="text-gray-600 text-xs">{new Date(selectedLog.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                 </div>
-                  {myRole === 'top_management' && (
+                {myRole === 'top_management' && (
                   <button onClick={() => deleteLog(selectedLog.id)}
                     className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
                     Löschen
@@ -390,9 +368,7 @@ export default function ModLogsPage() {
                 <span className="text-xl">{TYPE_CONFIG[log.log_type].icon}</span>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-white font-medium text-sm">
-                      {log.roblox_name || log.discord_name || 'Unbekannt'}
-                    </p>
+                    <p className="text-white font-medium text-sm">{log.roblox_name || log.discord_name || 'Unbekannt'}</p>
                     {log.roblox_id && <span className="text-gray-600 text-xs">ID: {log.roblox_id}</span>}
                   </div>
                   <p className="text-gray-500 text-xs truncate mt-0.5">{log.reason}</p>
