@@ -7,7 +7,9 @@ import { ROLE_LABELS } from '@/lib/permissions';
 
 const ALL_ROLES: UserRole[] = [
   'top_management', 'management', 'junior_management',
-  'moderation_team', 'development_team', 'social_media_team', 'event_team',
+  'senior_moderator', 'senior_developer', 'senior_content_producer', 'senior_event_organizer',
+  'moderator', 'developer', 'content_producer', 'event_organizer',
+  'trial_moderator', 'trial_developer', 'trial_content_producer', 'trial_event_organizer',
 ];
 
 export default function NewUserPage() {
