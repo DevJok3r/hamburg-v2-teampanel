@@ -89,7 +89,10 @@ export default function ModLogsPage() {
     if (!user) return;
     setMyId(user.id);
     const { data: profile } = await supabase.from('profiles').select('role, username').eq('id', user.id).single();
-    if (!profile || !isStaff(profile.role as UserRole)) { router.push('/dashboard'); return; }
+    const role = profile.role as UserRole;
+    const canAccess = isStaff(role) || role.includes('moderator');
+    if (!profile || !canAccess) { router.push('/dashboard'); return; }
+    const canDelete = role === 'top_management';
     setMyRole(profile.role as UserRole);
     setMyUsername(profile.username);
     const { data } = await supabase
@@ -347,10 +350,12 @@ export default function ModLogsPage() {
                   <p className="text-gray-500 text-xs">Eingetragen von <span className="text-gray-400">{(selectedLog.profiles as any)?.username}</span></p>
                   <p className="text-gray-600 text-xs">{new Date(selectedLog.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                 </div>
-                <button onClick={() => deleteLog(selectedLog.id)}
-                  className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
-                  Löschen
-                </button>
+                  {myRole === 'top_management' && (
+                  <button onClick={() => deleteLog(selectedLog.id)}
+                    className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
+                    Löschen
+                  </button>
+                )}
               </div>
             </div>
           </div>
