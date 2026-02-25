@@ -32,9 +32,9 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  const publicRoutes = ['/login'];
+  const publicRoutes = ['/login', '/apply', '/apply/moderation', '/apply/social_media', '/apply/event', '/apply/development'];
 
-  if (!session && !publicRoutes.includes(pathname)) {
+  if (!session && !publicRoutes.includes(pathname) && !pathname.startsWith('/apply')) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
