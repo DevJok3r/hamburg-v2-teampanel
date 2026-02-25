@@ -3,7 +3,7 @@ import { UserRole } from '@/types';
 export const ROLE_HIERARCHY: Record<UserRole, number> = {
   top_management:          100,
   management:               80,
-  junior_management:        60,
+  junior_management:        80, // gleichgestellt mit management
   senior_moderator:         40,
   senior_developer:         40,
   senior_content_producer:  40,
@@ -22,27 +22,60 @@ export function hasMinRole(userRole: UserRole, minRole: UserRole): boolean {
   return ROLE_HIERARCHY[userRole] >= ROLE_HIERARCHY[minRole];
 }
 
+// Hilfsfunktion: Ist Staff (Management oder Junior Management)
+export function isStaff(role: UserRole): boolean {
+  return ROLE_HIERARCHY[role] >= 80;
+}
+
+// Hilfsfunktion: Ist Senior oder höher
+export function isSeniorPlus(role: UserRole): boolean {
+  return ROLE_HIERARCHY[role] >= 40;
+}
+
 export const can = {
-  createUser:      (role: UserRole) => hasMinRole(role, 'management'),
-  editUser:        (role: UserRole) => hasMinRole(role, 'management'),
+  // Benutzerverwaltung
+  createUser:      (role: UserRole) => isStaff(role),
+  editUser:        (role: UserRole) => isStaff(role),
   deleteUser:      (role: UserRole) => role === 'top_management',
-  viewAllUsers:    (role: UserRole) => hasMinRole(role, 'junior_management'),
+  viewAllUsers:    (role: UserRole) => ROLE_HIERARCHY[role] >= 40, // Senior+
   changePassword:  (role: UserRole) => role === 'top_management',
-  reviewAbsence:   (role: UserRole) => hasMinRole(role, 'management'),
-  viewAllAbsences: (role: UserRole) => hasMinRole(role, 'junior_management'),
-  viewAllTodos:    (role: UserRole) => hasMinRole(role, 'junior_management'),
-  manageEntries:   (role: UserRole) => hasMinRole(role, 'junior_management'),
-  deleteEntries:   (role: UserRole) => hasMinRole(role, 'management'),
-  warnMember:      (role: UserRole) => hasMinRole(role, 'junior_management'),
-  kickMember:      (role: UserRole) => hasMinRole(role, 'management'),
-  viewAdmin:       (role: UserRole) => hasMinRole(role, 'junior_management'),
-  viewAuditLog:    (role: UserRole) => role === 'top_management',
+  changeUsername:  (role: UserRole) => role === 'top_management',
+  kickMember:      (role: UserRole) => isStaff(role),
   changeUserRole:  (actorRole: UserRole, targetRole: UserRole): boolean => {
     if (actorRole === 'top_management') return true;
-    if (actorRole === 'management') return ROLE_HIERARCHY[targetRole] < ROLE_HIERARCHY['management'];
-    if (actorRole === 'junior_management') return ROLE_HIERARCHY[targetRole] < ROLE_HIERARCHY['junior_management'];
+    if (isStaff(actorRole)) return ROLE_HIERARCHY[targetRole] < 80;
     return false;
   },
+
+  // Abmeldungen
+  reviewAbsence:   (role: UserRole) => isStaff(role),
+  deleteAbsence:   (role: UserRole) => isStaff(role),
+  viewAllAbsences: (role: UserRole) => true, // alle können sehen
+
+  // Todos
+  viewAllTodos:    (role: UserRole) => isStaff(role),
+
+  // Einträge & Verwarnungen
+  manageEntries:   (role: UserRole) => isStaff(role),
+  deleteEntries:   (role: UserRole) => isStaff(role),
+  warnMember:      (role: UserRole) => isStaff(role),
+
+  // Konferenzen
+  manageConferences: (role: UserRole) => isStaff(role),
+
+  // Leistungsbewertungen
+  manageEvaluations: (role: UserRole) => isStaff(role),
+
+  // Administration
+  viewAdmin:       (role: UserRole) => isStaff(role),
+  viewAuditLog:    (role: UserRole) => role === 'top_management',
+  manageLogs:      (role: UserRole) => role === 'top_management',
+
+  // Webhooks & Automationen
+  manageWebhooks:  (role: UserRole) => role === 'top_management',
+
+  // Bewerbungen
+  viewApplications: (role: UserRole) => isStaff(role),
 };
 
 export const ROLE_LABELS: Record<UserRole, string> = {
