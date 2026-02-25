@@ -2,11 +2,20 @@ export type UserRole =
   | 'top_management'
   | 'management'
   | 'junior_management'
-  | 'moderation_team'
-  | 'development_team'
-  | 'social_media_team'
-  | 'event_team';
+  | 'senior_moderator'
+  | 'senior_developer'
+  | 'senior_content_producer'
+  | 'senior_event_organizer'
+  | 'moderator'
+  | 'developer'
+  | 'content_producer'
+  | 'event_organizer'
+  | 'trial_moderator'
+  | 'trial_developer'
+  | 'trial_content_producer'
+  | 'trial_event_organizer';
 
+export type TeamLeadDepartment = 'moderation' | 'development' | 'social_media' | 'event';
 export type AbsenceStatus = 'pending' | 'approved' | 'rejected';
 export type ConferenceStatus = 'scheduled' | 'active' | 'completed' | 'cancelled';
 export type AttendanceStatus = 'present' | 'excused' | 'absent';
@@ -17,6 +26,7 @@ export interface Profile {
   id: string;
   username: string;
   role: UserRole;
+  team_lead_department: TeamLeadDepartment | null;
   created_at: string;
   last_sign_in_at: string | null;
   is_active: boolean;
@@ -47,6 +57,9 @@ export interface Conference {
   ended_at: string | null;
   created_at: string;
   updated_at: string;
+  conference_type: string;
+  target_roles: string[];
+  extra_user_ids: string[];
   profiles?: Pick<Profile, 'username' | 'role'>;
 }
 
