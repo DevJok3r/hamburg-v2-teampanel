@@ -218,16 +218,20 @@ export default function DeptApplicationsPage() {
                 </div>
               ))}
 
-              {/* Abteilungsfragen */}
-              {DEPT_QUESTIONS[selectedApp.department]?.map((q, i) => {
-                const val = selectedApp[`extra_q${i + 1}` as keyof DeptApplication] as string | null;
-                return val ? (
-                  <div key={i} className="bg-[#0f1117] rounded-lg p-4">
-                    <p className="text-gray-400 text-xs font-medium mb-2">{q}</p>
-                    <p className="text-gray-300 text-sm whitespace-pre-wrap">{val}</p>
-                  </div>
-                ) : null;
-              })}
+              {/* Alle Antworten */}
+              {selectedApp.extra_q1 && (() => {
+                try {
+                  const answers = JSON.parse(selectedApp.extra_q1);
+                  return Object.entries(answers).map(([key, val]) => (
+                    val ? (
+                      <div key={key} className="bg-[#0f1117] rounded-lg p-4">
+                        <p className="text-gray-500 text-xs font-medium mb-1">{key.replace(/_/g, ' ')}</p>
+                        <p className="text-gray-300 text-sm whitespace-pre-wrap">{String(val)}</p>
+                      </div>
+                    ) : null
+                  ));
+                } catch { return null; }
+              })()}
 
               <p className="text-gray-500 text-xs">
                 Eingegangen am {new Date(selectedApp.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
