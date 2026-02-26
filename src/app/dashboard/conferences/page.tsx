@@ -117,7 +117,7 @@ export default function ConferencesPage() {
     if (!form.title.trim() || !form.scheduled_at || form.target_roles.length === 0) return;
     await supabase.from('conferences').insert({
       title: form.title, description: form.description || null,
-      scheduled_at: form.scheduled_at, created_by: myId,
+      scheduled_at: new Date(form.scheduled_at).toISOString(), created_by: myId,
       conference_type: form.conference_type,
       target_roles: form.target_roles,
       extra_user_ids: form.extra_user_ids,
@@ -134,7 +134,7 @@ export default function ConferencesPage() {
     if (!editConference) return;
     await supabase.from('conferences').update({
       title: editForm.title, description: editForm.description || null,
-      scheduled_at: editForm.scheduled_at, conference_type: editForm.conference_type,
+      scheduled_at: new Date(editForm.scheduled_at).toISOString(), conference_type: editForm.conference_type,
       target_roles: editForm.target_roles, extra_user_ids: editForm.extra_user_ids,
     }).eq('id', editConference.id);
     await fireAutomation('conference_updated', { titel: editForm.title, ersteller: myUsername });
@@ -462,7 +462,7 @@ export default function ConferencesPage() {
                         setEditConference(conf);
                         setEditForm({
                           title: conf.title, description: conf.description || '',
-                          scheduled_at: conf.scheduled_at.slice(0, 16),
+                          scheduled_at: new Date(new Date(conf.scheduled_at).getTime() - new Date(conf.scheduled_at).getTimezoneOffset() * 60000).toISOString().slice(0, 16),
                           conference_type: conf.conference_type || 'general',
                           target_roles: conf.target_roles || [],
                           extra_user_ids: conf.extra_user_ids || [],
