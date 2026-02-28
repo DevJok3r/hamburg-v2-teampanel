@@ -26,6 +26,7 @@ export default function Sidebar({ profile }: SidebarProps) {
   const isStaffRole      = isStaff(profile.role);
   const isSeniorPlusRole = isSeniorPlus(profile.role);
   const isTopManagement  = profile.role === 'top_management';
+  const isOwner = profile.username === 'jxkerlds';
 
   const navItems = [
     {
@@ -99,6 +100,12 @@ export default function Sidebar({ profile }: SidebarProps) {
       label: 'Administration',
       icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z',
       show: isStaffRole || profile.role.includes('moderator'),
+    },
+    {
+      href: '/dashboard/bot',
+      label: 'Bot Dashboard',
+      icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
+      show: isOwner,
     },
   ];
 
