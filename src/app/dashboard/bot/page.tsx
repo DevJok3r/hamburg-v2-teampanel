@@ -1,128 +1,173 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createClientSupabaseClient } from '@/lib/supabase/client';
 
-const BOT_TOKEN = process.env.NEXT_PUBLIC_DISCORD_BOT_TOKEN;
 const CLIENT_ID = '1385595812544909443';
 
 const ACTIVITIES = [
-  { value: 0, label: 'Spielt' },
-  { value: 1, label: 'Streamt' },
-  { value: 2, label: 'Hört' },
-  { value: 3, label: 'Schaut' },
-  { value: 5, label: 'Konkurriert in' },
+  { value: 0, label: '🎮 Spielt' },
+  { value: 1, label: '📺 Streamt' },
+  { value: 2, label: '🎵 Hört' },
+  { value: 3, label: '👁️ Schaut' },
+  { value: 5, label: '🏆 Konkurriert in' },
 ];
 
 const STATUSES = [
-  { value: 'online',    label: '🟢 Online',          color: 'text-green-400' },
-  { value: 'idle',      label: '🟡 Abwesend',         color: 'text-yellow-400' },
-  { value: 'dnd',       label: '🔴 Nicht stören',     color: 'text-red-400' },
-  { value: 'invisible', label: '⚫ Unsichtbar',        color: 'text-gray-400' },
+  { value: 'online',    label: 'Online',       dot: 'bg-green-500' },
+  { value: 'idle',      label: 'Abwesend',     dot: 'bg-yellow-500' },
+  { value: 'dnd',       label: 'Nicht stören', dot: 'bg-red-500' },
+  { value: 'invisible', label: 'Unsichtbar',   dot: 'bg-gray-500' },
 ];
 
-type Tab = 'overview' | 'presence' | 'profile' | 'commands' | 'logs';
+const ALL_COMMANDS = [
+  'ban', 'kick', 'warn', 'warns', 'timeout', 'unban', 'clear',
+  'ticket', 'config', 'announce', 'role', 'panel',
+  'userinfo', 'serverinfo', 'help',
+];
+
+type Tab = 'overview' | 'presence' | 'profile' | 'access' | 'permissions' | 'logs';
 
 export default function BotDashboardPage() {
-  const [myUsername, setMyUsername]     = useState('');
-  const [loading, setLoading]           = useState(true);
-  const [activeTab, setActiveTab]       = useState<Tab>('overview');
-  const [botInfo, setBotInfo]           = useState<any>(null);
-  const [botLoading, setBotLoading]     = useState(true);
-  const [saving, setSaving]             = useState(false);
-  const [saveMsg, setSaveMsg]           = useState('');
+  const [myUsername, setMyUsername] = useState('');
+  const [loading, setLoading]       = useState(true);
+  const [hasAccess, setHasAccess]   = useState(false);
+  const [activeTab, setActiveTab]   = useState<Tab>('overview');
+  const [botInfo, setBotInfo]       = useState<any>(null);
+  const [saving, setSaving]         = useState(false);
+  const [msg, setMsg]               = useState<{ text: string; ok: boolean } | null>(null);
 
   // Presence
-  const [status, setStatus]             = useState('online');
-  const [activityType, setActivityType] = useState(3);
-  const [activityText, setActivityText] = useState('Hamburg V2 Staff Panel');
+  const [presence, setPresence] = useState({ status: 'online', activity_type: 3, activity_text: 'Hamburg V2 Staff Panel' });
 
   // Profile
-  const [newUsername, setNewUsername]   = useState('');
-  const [avatarUrl, setAvatarUrl]       = useState('');
-  const [bannerUrl, setBannerUrl]       = useState('');
-  const [bioText, setBioText]           = useState('');
+  const [newUsername, setNewUsername] = useState('');
+  const [avatarUrl, setAvatarUrl]     = useState('');
 
-  // Commands (gespeichert in Supabase)
-  const [commands, setCommands]         = useState<any[]>([]);
-  const [logs, setLogs]                 = useState<any[]>([]);
+  // Dashboard Access
+  const [accessList, setAccessList]   = useState<any[]>([]);
+  const [newAccessUser, setNewAccessUser] = useState('');
+
+  // Command Permissions
+  const [discordRoles, setDiscordRoles]   = useState<any[]>([]);
+  const [cmdPerms, setCmdPerms]           = useState<Record<string, string[]>>({}); // command → role_ids
+
+  // Logs
+  const [warns, setWarns]     = useState<any[]>([]);
+  const [tickets, setTickets] = useState<any[]>([]);
 
   const supabase = createClientSupabaseClient();
+  const BOT_TOKEN = process.env.NEXT_PUBLIC_BOT_TOKEN || '';
 
-  async function loadUser() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    const { data: profile } = await supabase.from('profiles').select('username').eq('id', user.id).single();
-    if (profile) setMyUsername(profile.username);
-    setLoading(false);
+  function showMsg(text: string, ok = true) {
+    setMsg({ text, ok });
+    setTimeout(() => setMsg(null), 4000);
   }
 
-  async function loadBotInfo() {
+  // ─── LOAD ──────────────────────────────────────────────────────────────────
+  const loadAll = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setLoading(false); return; }
+    const { data: profile } = await supabase.from('profiles').select('username').eq('id', user.id).single();
+    const username = profile?.username || '';
+    setMyUsername(username);
+
+    const { data: accessRow } = await supabase.from('bot_dashboard_access').select('*').eq('username', username).single();
+    const access = !!accessRow;
+    setHasAccess(access);
+    if (!access) { setLoading(false); return; }
+
+    // Presence
+    const { data: presRow } = await supabase.from('bot_config').select('value').eq('key', 'presence').single();
+    if (presRow?.value) setPresence(presRow.value);
+
+    // Bot Info
     try {
       const res = await fetch('https://discord.com/api/v10/users/@me', {
-        headers: { Authorization: `Bot process.env.NEXT_PUBLIC_BOT_TOKEN` },
+        headers: { Authorization: `Bot ${BOT_TOKEN}` },
       });
-      const data = await res.json();
-      setBotInfo(data);
+      if (res.ok) setBotInfo(await res.json());
     } catch {}
-    setBotLoading(false);
-  }
 
-  async function loadCommands() {
-    const { data } = await supabase.from('bot_commands_config').select('*').order('name');
-    setCommands(data || []);
-  }
+    // Access List
+    const { data: al } = await supabase.from('bot_dashboard_access').select('*').order('created_at');
+    setAccessList(al || []);
 
-  async function loadLogs() {
-    const { data } = await supabase.from('discord_warns').select('*').order('created_at', { ascending: false }).limit(20);
-    setLogs(data || []);
-  }
+    // Discord Rollen (aus dem Server)
+    await loadDiscordRoles();
 
-  async function updatePresence() {
-    setSaving(true);
+    // Command Permissions
+    const { data: cp } = await supabase.from('bot_command_permissions').select('*');
+    const map: Record<string, string[]> = {};
+    (cp || []).forEach((row: any) => {
+      if (!map[row.command_name]) map[row.command_name] = [];
+      map[row.command_name].push(row.discord_role_id);
+    });
+    setCmdPerms(map);
+
+    // Logs
+    const { data: w } = await supabase.from('discord_warns').select('*').order('created_at', { ascending: false }).limit(30);
+    setWarns(w || []);
+    const { data: t } = await supabase.from('tickets').select('*').order('created_at', { ascending: false }).limit(30);
+    setTickets(t || []);
+
+    setLoading(false);
+  }, []);
+
+  async function loadDiscordRoles() {
+    if (!BOT_TOKEN) return;
     try {
-      // Presence in Supabase speichern (Bot liest beim Start)
-      await supabase.from('bot_config').upsert({
-        guild_id: 'global',
-        presence_status: status,
-        presence_activity_type: activityType,
-        presence_activity_text: activityText,
-      }, { onConflict: 'guild_id' });
-      setSaveMsg('✅ Presence gespeichert! Bot-Neustart nötig um sie anzuwenden.');
-    } catch {
-      setSaveMsg('❌ Fehler beim Speichern.');
-    }
-    setSaving(false);
-    setTimeout(() => setSaveMsg(''), 4000);
+      // Guilds des Bots holen
+      const gRes = await fetch('https://discord.com/api/v10/users/@me/guilds', {
+        headers: { Authorization: `Bot ${BOT_TOKEN}` },
+      });
+      const guilds = await gRes.json();
+      if (!guilds?.length) return;
+      const guildId = guilds[0].id;
+
+      const rRes = await fetch(`https://discord.com/api/v10/guilds/${guildId}/roles`, {
+        headers: { Authorization: `Bot ${BOT_TOKEN}` },
+      });
+      const roles = await rRes.json();
+      setDiscordRoles((roles || []).filter((r: any) => r.name !== '@everyone').sort((a: any, b: any) => b.position - a.position));
+    } catch {}
   }
 
-  async function updateBotUsername() {
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  // ─── PRESENCE SPEICHERN ────────────────────────────────────────────────────
+  async function savePresence() {
+    setSaving(true);
+    const { error } = await supabase.from('bot_config')
+      .update({ value: presence, updated_at: new Date().toISOString() })
+      .eq('key', 'presence');
+    if (error) showMsg('❌ Fehler beim Speichern.', false);
+    else showMsg('✅ Presence aktualisiert! Bot ändert Status automatisch.');
+    setSaving(false);
+  }
+
+  // ─── BOT USERNAME ÄNDERN ──────────────────────────────────────────────────
+  async function saveBotUsername() {
     if (!newUsername.trim()) return;
     setSaving(true);
-    try {
-      const res = await fetch('https://discord.com/api/v10/users/@me', {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bot process.env.NEXT_PUBLIC_BOT_TOKEN`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username: newUsername }),
-      });
-      if (res.ok) {
-        setSaveMsg('✅ Bot-Name geändert!');
-        loadBotInfo();
-      } else {
-        const err = await res.json();
-        setSaveMsg(`❌ Fehler: ${err.message}`);
-      }
-    } catch {
-      setSaveMsg('❌ Netzwerkfehler.');
+    const res = await fetch('https://discord.com/api/v10/users/@me', {
+      method: 'PATCH',
+      headers: { Authorization: `Bot ${BOT_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: newUsername }),
+    });
+    if (res.ok) {
+      setBotInfo(await res.json());
+      setNewUsername('');
+      showMsg('✅ Bot-Name geändert!');
+    } else {
+      const err = await res.json();
+      showMsg(`❌ ${err.message}`, false);
     }
     setSaving(false);
-    setTimeout(() => setSaveMsg(''), 4000);
   }
 
-  async function updateBotAvatar() {
+  // ─── AVATAR ÄNDERN ────────────────────────────────────────────────────────
+  async function saveBotAvatar() {
     if (!avatarUrl.trim()) return;
     setSaving(true);
     try {
@@ -134,88 +179,111 @@ export default function BotDashboardPage() {
         const base64 = reader.result as string;
         const res = await fetch('https://discord.com/api/v10/users/@me', {
           method: 'PATCH',
-          headers: {
-            Authorization: `Bot process.env.NEXT_PUBLIC_BOT_TOKEN`,
-            'Content-Type': 'application/json',
-          },
+          headers: { Authorization: `Bot ${BOT_TOKEN}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ avatar: base64 }),
         });
-        if (res.ok) {
-          setSaveMsg('✅ Avatar geändert!');
-          loadBotInfo();
-        } else {
-          const err = await res.json();
-          setSaveMsg(`❌ Fehler: ${err.message}`);
-        }
+        if (res.ok) { setBotInfo(await res.json()); showMsg('✅ Avatar geändert!'); }
+        else { const err = await res.json(); showMsg(`❌ ${err.message}`, false); }
         setSaving(false);
-        setTimeout(() => setSaveMsg(''), 4000);
       };
-    } catch {
-      setSaveMsg('❌ Fehler beim Laden des Bildes.');
-      setSaving(false);
+    } catch { showMsg('❌ Bild konnte nicht geladen werden.', false); setSaving(false); }
+  }
+
+  // ─── DASHBOARD ZUGRIFF ────────────────────────────────────────────────────
+  async function grantAccess() {
+    if (!newAccessUser.trim()) return;
+    const { error } = await supabase.from('bot_dashboard_access').insert({ username: newAccessUser.trim(), granted_by: myUsername });
+    if (error) showMsg(`❌ ${error.message}`, false);
+    else { showMsg(`✅ ${newAccessUser} hat jetzt Zugriff!`); setNewAccessUser(''); loadAll(); }
+  }
+
+  async function revokeAccess(username: string) {
+    if (username === 'jxkerlds') return showMsg('❌ jxkerlds kann nicht entfernt werden.', false);
+    await supabase.from('bot_dashboard_access').delete().eq('username', username);
+    showMsg(`✅ Zugriff für ${username} entzogen.`);
+    loadAll();
+  }
+
+  // ─── COMMAND PERMISSIONS ──────────────────────────────────────────────────
+  async function toggleCmdPerm(command: string, roleId: string, roleName: string) {
+    const current = cmdPerms[command] || [];
+    const has = current.includes(roleId);
+    if (has) {
+      await supabase.from('bot_command_permissions').delete()
+        .eq('command_name', command).eq('discord_role_id', roleId);
+      setCmdPerms(p => ({ ...p, [command]: (p[command] || []).filter(id => id !== roleId) }));
+    } else {
+      await supabase.from('bot_command_permissions').upsert({
+        command_name: command, discord_role_id: roleId, discord_role_name: roleName,
+      }, { onConflict: 'command_name,discord_role_id' });
+      setCmdPerms(p => ({ ...p, [command]: [...(p[command] || []), roleId] }));
     }
   }
 
-  useEffect(() => {
-    loadUser();
-    loadBotInfo();
-    loadCommands();
-    loadLogs();
-  }, []);
-
+  // ─── LOADING / NO ACCESS ──────────────────────────────────────────────────
   if (loading) return <div className="text-gray-400 text-center py-12">Lade...</div>;
-  if (myUsername !== 'jxkerlds') return (
+
+  if (!hasAccess) return (
     <div className="flex items-center justify-center min-h-[60vh]">
       <div className="text-center">
         <p className="text-6xl mb-4">🔒</p>
-        <p className="text-white font-bold text-xl">Kein Zugriff</p>
-        <p className="text-gray-400 text-sm mt-1">Dieses Dashboard ist privat.</p>
+        <p className="text-white font-bold text-xl mb-1">Kein Zugriff</p>
+        <p className="text-gray-400 text-sm">Dieses Dashboard ist privat.</p>
       </div>
     </div>
   );
 
-  const avatarUrl2 = botInfo?.avatar
+  const avatarSrc = botInfo?.avatar
     ? `https://cdn.discordapp.com/avatars/${botInfo.id}/${botInfo.avatar}.png?size=256`
     : `https://cdn.discordapp.com/embed/avatars/0.png`;
 
+  const currentStatus = STATUSES.find(s => s.value === presence.status);
+
   const tabs: { key: Tab; label: string; icon: string }[] = [
-    { key: 'overview',  label: 'Übersicht',  icon: '📊' },
-    { key: 'presence',  label: 'Status',     icon: '🟢' },
-    { key: 'profile',   label: 'Profil',     icon: '🤖' },
-    { key: 'commands',  label: 'Commands',   icon: '⚡' },
-    { key: 'logs',      label: 'Warn-Logs',  icon: '📋' },
+    { key: 'overview',     label: 'Übersicht',    icon: '📊' },
+    { key: 'presence',     label: 'Status',        icon: '🟢' },
+    { key: 'profile',      label: 'Profil',        icon: '🤖' },
+    { key: 'permissions',  label: 'Berechtigungen',icon: '⚡' },
+    { key: 'access',       label: 'Zugriff',       icon: '🔑' },
+    { key: 'logs',         label: 'Logs',          icon: '📋' },
   ];
 
   return (
     <div className="space-y-6 max-w-4xl">
+
       {/* Header */}
-      <div className="bg-gradient-to-r from-[#5865F2]/20 to-[#EB459E]/20 border border-[#5865F2]/30 rounded-2xl p-6">
+      <div className="bg-gradient-to-r from-[#5865F2]/20 via-[#5865F2]/10 to-transparent border border-[#5865F2]/30 rounded-2xl p-6">
         <div className="flex items-center gap-5">
-          {botLoading ? (
-            <div className="w-20 h-20 rounded-full bg-white/10 animate-pulse" />
-          ) : (
-            <div className="relative">
-              <img src={avatarUrl2} alt="Bot Avatar"
-                className="w-20 h-20 rounded-full border-2 border-[#5865F2]/50" />
-              <div className={`absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-[#1a1d27]
-                ${status === 'online' ? 'bg-green-500' : status === 'idle' ? 'bg-yellow-500' : status === 'dnd' ? 'bg-red-500' : 'bg-gray-500'}`} />
-            </div>
-          )}
-          <div>
-            <div className="flex items-center gap-2">
+          <div className="relative flex-shrink-0">
+            <img src={avatarSrc} alt="Bot" className="w-20 h-20 rounded-full border-2 border-[#5865F2]/40" />
+            <div className={`absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-[#0f1117] ${currentStatus?.dot || 'bg-green-500'}`} />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-2xl font-bold text-white">{botInfo?.username || 'Hamburg V2 Bot'}</h1>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-[#5865F2]/20 text-[#5865F2] border border-[#5865F2]/30 font-medium">BOT</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-[#5865F2]/20 text-[#5865F2] border border-[#5865F2]/30 font-bold">BOT</span>
             </div>
-            <p className="text-gray-400 text-sm mt-0.5">#{botInfo?.discriminator || '0000'} · ID: {botInfo?.id || CLIENT_ID}</p>
-            <p className="text-[#5865F2] text-xs mt-1 font-medium">🔒 Privates Dashboard · Nur für jxkerlds</p>
+            <p className="text-gray-400 text-sm mt-0.5">ID: {botInfo?.id || CLIENT_ID}</p>
+            <p className="text-[#5865F2] text-xs mt-1">🔒 Privates Bot-Dashboard · {myUsername}</p>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${
+              presence.status === 'online' ? 'bg-green-500/10 text-green-400 border-green-500/30' :
+              presence.status === 'idle' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30' :
+              presence.status === 'dnd' ? 'bg-red-500/10 text-red-400 border-red-500/30' :
+              'bg-gray-500/10 text-gray-400 border-gray-500/30'}`}>
+              <div className={`w-2 h-2 rounded-full ${currentStatus?.dot}`} />
+              {currentStatus?.label}
+            </div>
+            <p className="text-gray-500 text-xs mt-1">{ACTIVITIES.find(a => a.value === presence.activity_type)?.label} {presence.activity_text}</p>
           </div>
         </div>
       </div>
 
-      {/* Save Message */}
-      {saveMsg && (
-        <div className={`rounded-xl px-4 py-3 text-sm font-medium border ${saveMsg.startsWith('✅') ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>
-          {saveMsg}
+      {/* Message */}
+      {msg && (
+        <div className={`rounded-xl px-4 py-3 text-sm font-medium border transition ${msg.ok ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>
+          {msg.text}
         </div>
       )}
 
@@ -224,59 +292,59 @@ export default function BotDashboardPage() {
         {tabs.map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2
-              ${activeTab === tab.key ? 'bg-[#5865F2] text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10'}`}>
+              ${activeTab === tab.key ? 'bg-[#5865F2] text-white shadow-lg shadow-[#5865F2]/20' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'}`}>
             {tab.icon} {tab.label}
           </button>
         ))}
       </div>
 
-      {/* ─── ÜBERSICHT ──────────────────────────────────────────────────── */}
+      {/* ─── ÜBERSICHT ──────────────────────────────────────────────────────── */}
       {activeTab === 'overview' && (
         <div className="space-y-4">
           <div className="grid grid-cols-3 gap-4">
-            <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5 text-center">
-              <p className="text-3xl font-bold text-[#5865F2]">15</p>
-              <p className="text-gray-400 text-xs mt-1">Commands</p>
+            <div className="bg-[#1a1d27] border border-[#5865F2]/20 rounded-xl p-5 text-center">
+              <p className="text-3xl font-bold text-[#5865F2]">{ALL_COMMANDS.length}</p>
+              <p className="text-gray-400 text-xs mt-1">Slash Commands</p>
             </div>
             <div className="bg-[#1a1d27] border border-green-500/20 rounded-xl p-5 text-center">
-              <p className="text-3xl font-bold text-green-400">Online</p>
-              <p className="text-gray-400 text-xs mt-1">Status</p>
+              <p className="text-3xl font-bold text-green-400">{warns.length}</p>
+              <p className="text-gray-400 text-xs mt-1">Verwarnungen</p>
             </div>
             <div className="bg-[#1a1d27] border border-purple-500/20 rounded-xl p-5 text-center">
-              <p className="text-3xl font-bold text-purple-400">Railway</p>
-              <p className="text-gray-400 text-xs mt-1">Hosting</p>
+              <p className="text-3xl font-bold text-purple-400">{tickets.length}</p>
+              <p className="text-gray-400 text-xs mt-1">Tickets gesamt</p>
             </div>
           </div>
 
           <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5">
-            <h3 className="text-white font-medium mb-4">⚡ Verfügbare Commands</h3>
+            <h3 className="text-white font-medium mb-4">⚡ Alle Commands</h3>
             <div className="grid grid-cols-2 gap-2">
               {[
-                { name: '/ban', desc: 'Mitglied bannen', cat: 'Moderation' },
-                { name: '/kick', desc: 'Mitglied kicken', cat: 'Moderation' },
-                { name: '/warn', desc: 'Verwarnung geben', cat: 'Moderation' },
-                { name: '/warns', desc: 'Verwarnungen anzeigen', cat: 'Moderation' },
-                { name: '/timeout', desc: 'Timeout geben', cat: 'Moderation' },
-                { name: '/unban', desc: 'Entbannen', cat: 'Moderation' },
-                { name: '/clear', desc: 'Nachrichten löschen', cat: 'Moderation' },
-                { name: '/ticket setup', desc: 'Ticket Panel erstellen', cat: 'Admin' },
-                { name: '/config', desc: 'Bot konfigurieren', cat: 'Admin' },
-                { name: '/announce', desc: 'Ankündigung posten', cat: 'Admin' },
-                { name: '/role', desc: 'Rollen verwalten', cat: 'Admin' },
-                { name: '/panel', desc: 'TeamPanel Daten', cat: 'Admin' },
-                { name: '/userinfo', desc: 'User Infos', cat: 'Info' },
-                { name: '/serverinfo', desc: 'Server Infos', cat: 'Info' },
-                { name: '/help', desc: 'Alle Commands', cat: 'Info' },
+                { name: '/ban', cat: 'Mod', desc: 'Mitglied bannen' },
+                { name: '/kick', cat: 'Mod', desc: 'Mitglied kicken' },
+                { name: '/warn', cat: 'Mod', desc: 'Verwarnung geben' },
+                { name: '/warns', cat: 'Mod', desc: 'Verwarnungen anzeigen' },
+                { name: '/timeout', cat: 'Mod', desc: 'Timeout geben' },
+                { name: '/unban', cat: 'Mod', desc: 'Entbannen' },
+                { name: '/clear', cat: 'Mod', desc: 'Nachrichten löschen' },
+                { name: '/ticket', cat: 'Admin', desc: 'Ticket System' },
+                { name: '/config', cat: 'Admin', desc: 'Bot konfigurieren' },
+                { name: '/announce', cat: 'Admin', desc: 'Ankündigung posten' },
+                { name: '/role', cat: 'Admin', desc: 'Rollen verwalten' },
+                { name: '/panel', cat: 'Admin', desc: 'TeamPanel Daten' },
+                { name: '/userinfo', cat: 'Info', desc: 'User Infos' },
+                { name: '/serverinfo', cat: 'Info', desc: 'Server Infos' },
+                { name: '/help', cat: 'Info', desc: 'Alle Commands' },
               ].map(cmd => (
                 <div key={cmd.name} className="flex items-center justify-between bg-[#0f1117] rounded-lg px-3 py-2.5">
                   <div>
                     <p className="text-white text-sm font-mono font-medium">{cmd.name}</p>
                     <p className="text-gray-500 text-xs">{cmd.desc}</p>
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded border
-                    ${cmd.cat === 'Moderation' ? 'bg-red-500/10 text-red-400 border-red-500/30' :
-                      cmd.cat === 'Admin' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' :
-                      'bg-gray-500/10 text-gray-400 border-gray-500/30'}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded border ${
+                    cmd.cat === 'Mod' ? 'bg-red-500/10 text-red-400 border-red-500/30' :
+                    cmd.cat === 'Admin' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' :
+                    'bg-gray-500/10 text-gray-400 border-gray-500/30'}`}>
                     {cmd.cat}
                   </span>
                 </div>
@@ -286,152 +354,211 @@ export default function BotDashboardPage() {
         </div>
       )}
 
-      {/* ─── STATUS / PRESENCE ───────────────────────────────────────────── */}
+      {/* ─── PRESENCE ───────────────────────────────────────────────────────── */}
       {activeTab === 'presence' && (
         <div className="space-y-4">
-          <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5 space-y-4">
-            <h3 className="text-white font-medium">🟢 Online-Status</h3>
-            <div className="grid grid-cols-2 gap-3">
-              {STATUSES.map(s => (
-                <button key={s.value} onClick={() => setStatus(s.value)}
-                  className={`px-4 py-3 rounded-lg border text-sm font-medium transition text-left
-                    ${status === s.value ? 'bg-[#5865F2]/20 border-[#5865F2]/50 text-white' : 'bg-[#0f1117] border-white/10 text-gray-400 hover:bg-white/5'}`}>
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5 space-y-5">
+            <h3 className="text-white font-medium">🟢 Status einstellen</h3>
 
-          <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5 space-y-4">
-            <h3 className="text-white font-medium">🎮 Aktivität</h3>
             <div>
-              <label className="text-gray-400 text-xs mb-1 block">Aktivitätstyp</label>
-              <select value={activityType} onChange={e => setActivityType(Number(e.target.value))}
-                className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#5865F2]">
-                {ACTIVITIES.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
-              </select>
+              <label className="text-gray-400 text-xs mb-2 block">Online-Status</label>
+              <div className="grid grid-cols-2 gap-2">
+                {STATUSES.map(s => (
+                  <button key={s.value} onClick={() => setPresence(p => ({ ...p, status: s.value }))}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg border text-sm font-medium transition
+                      ${presence.status === s.value ? 'bg-[#5865F2]/20 border-[#5865F2]/50 text-white' : 'bg-[#0f1117] border-white/10 text-gray-400 hover:bg-white/5'}`}>
+                    <div className={`w-3 h-3 rounded-full ${s.dot}`} />
+                    {s.label}
+                  </button>
+                ))}
+              </div>
             </div>
+
             <div>
-              <label className="text-gray-400 text-xs mb-1 block">Aktivitätstext</label>
-              <input value={activityText} onChange={e => setActivityText(e.target.value)}
+              <label className="text-gray-400 text-xs mb-2 block">Aktivitätstyp</label>
+              <div className="grid grid-cols-3 gap-2">
+                {ACTIVITIES.map(a => (
+                  <button key={a.value} onClick={() => setPresence(p => ({ ...p, activity_type: a.value }))}
+                    className={`px-3 py-2 rounded-lg border text-xs font-medium transition
+                      ${presence.activity_type === a.value ? 'bg-[#5865F2]/20 border-[#5865F2]/50 text-white' : 'bg-[#0f1117] border-white/10 text-gray-400 hover:bg-white/5'}`}>
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-gray-400 text-xs mb-2 block">Aktivitätstext</label>
+              <input value={presence.activity_text}
+                onChange={e => setPresence(p => ({ ...p, activity_text: e.target.value }))}
                 placeholder="z.B. Hamburg V2 Staff Panel"
-                className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-[#5865F2]" />
+                className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-[#5865F2]" />
             </div>
-            <div className="bg-[#0f1117] rounded-lg p-3 border border-white/5">
-              <p className="text-gray-400 text-xs mb-1">Vorschau</p>
-              <p className="text-white text-sm">
-                <span className="text-gray-400">{ACTIVITIES.find(a => a.value === activityType)?.label} </span>
-                <span className="font-medium">{activityText || '...'}</span>
-              </p>
+
+            <div className="bg-[#0f1117] rounded-lg p-4 border border-white/5">
+              <p className="text-gray-500 text-xs mb-1">Discord Vorschau</p>
+              <div className="flex items-center gap-2">
+                <div className={`w-3 h-3 rounded-full ${currentStatus?.dot}`} />
+                <p className="text-white text-sm">
+                  <span className="text-gray-400">{ACTIVITIES.find(a => a.value === presence.activity_type)?.label} </span>
+                  <span className="font-medium">{presence.activity_text || '...'}</span>
+                </p>
+              </div>
             </div>
-            <button onClick={updatePresence} disabled={saving}
-              className="w-full bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-40 text-white font-medium py-2.5 rounded-lg text-sm transition">
-              {saving ? 'Speichern...' : '💾 Presence speichern'}
+
+            <button onClick={savePresence} disabled={saving}
+              className="w-full bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-40 text-white font-medium py-3 rounded-lg text-sm transition shadow-lg shadow-[#5865F2]/20">
+              {saving ? 'Speichern...' : '💾 Sofort anwenden (kein Restart nötig!)'}
             </button>
-            <p className="text-gray-500 text-xs text-center">⚠️ Ein Bot-Neustart auf Railway ist nötig um den Status anzuwenden.</p>
           </div>
         </div>
       )}
 
-      {/* ─── PROFIL ──────────────────────────────────────────────────────── */}
+      {/* ─── PROFIL ─────────────────────────────────────────────────────────── */}
       {activeTab === 'profile' && (
         <div className="space-y-4">
-          <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5 space-y-4">
+          {/* Bot Info */}
+          <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5">
+            <h3 className="text-white font-medium mb-3">ℹ️ Bot Informationen</h3>
+            <div className="space-y-2">
+              {[
+                { label: 'Username', value: botInfo?.username || '–' },
+                { label: 'ID', value: botInfo?.id || CLIENT_ID },
+                { label: 'Verifiziert', value: botInfo?.verified ? '✅ Ja' : '❌ Nein' },
+              ].map(item => (
+                <div key={item.label} className="flex items-center justify-between bg-[#0f1117] rounded-lg px-4 py-3">
+                  <span className="text-gray-400 text-sm">{item.label}</span>
+                  <span className="text-white text-sm font-medium font-mono">{item.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Username ändern */}
+          <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5 space-y-3">
             <h3 className="text-white font-medium">✏️ Bot-Name ändern</h3>
-            <p className="text-yellow-400 text-xs bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">
-              ⚠️ Discord erlaubt nur 2 Namensänderungen pro Stunde!
-            </p>
+            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">
+              <p className="text-yellow-400 text-xs">⚠️ Discord erlaubt nur 2 Namensänderungen pro Stunde!</p>
+            </div>
             <div className="flex gap-3">
               <input value={newUsername} onChange={e => setNewUsername(e.target.value)}
-                placeholder={botInfo?.username || 'Neuer Bot-Name...'}
+                placeholder="Neuer Bot-Name..."
                 className="flex-1 bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-[#5865F2]" />
-              <button onClick={updateBotUsername} disabled={saving || !newUsername.trim()}
+              <button onClick={saveBotUsername} disabled={saving || !newUsername.trim()}
                 className="bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-40 text-white font-medium px-5 py-2 rounded-lg text-sm transition">
                 Ändern
               </button>
             </div>
           </div>
 
-          <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5 space-y-4">
+          {/* Avatar ändern */}
+          <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5 space-y-3">
             <h3 className="text-white font-medium">🖼️ Avatar ändern</h3>
-            <p className="text-yellow-400 text-xs bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">
-              ⚠️ Bild-URL (PNG/JPG). Discord limitiert Avatar-Änderungen!
-            </p>
+            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">
+              <p className="text-yellow-400 text-xs">⚠️ Direkte Bild-URL angeben (PNG/JPG). Discord limitiert Avatar-Änderungen!</p>
+            </div>
             <div className="flex gap-3">
               <input value={avatarUrl} onChange={e => setAvatarUrl(e.target.value)}
                 placeholder="https://example.com/avatar.png"
                 className="flex-1 bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-[#5865F2]" />
-              <button onClick={updateBotAvatar} disabled={saving || !avatarUrl.trim()}
+              <button onClick={saveBotAvatar} disabled={saving || !avatarUrl.trim()}
                 className="bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-40 text-white font-medium px-5 py-2 rounded-lg text-sm transition">
                 Ändern
               </button>
             </div>
             {avatarUrl && (
-              <div className="flex items-center gap-3">
-                <img src={avatarUrl} alt="Vorschau" className="w-16 h-16 rounded-full object-cover border border-white/10" onError={e => (e.currentTarget.style.display = 'none')} />
-                <p className="text-gray-400 text-xs">Vorschau</p>
-              </div>
-            )}
-          </div>
-
-          <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5 space-y-4">
-            <h3 className="text-white font-medium">ℹ️ Aktuelle Bot-Infos</h3>
-            {botLoading ? (
-              <p className="text-gray-400 text-sm">Lade...</p>
-            ) : botInfo ? (
-              <div className="space-y-2">
-                {[
-                  { label: 'Username', value: botInfo.username },
-                  { label: 'ID', value: botInfo.id },
-                  { label: 'Discriminator', value: `#${botInfo.discriminator}` },
-                  { label: 'Verifiziert', value: botInfo.verified ? '✅ Ja' : '❌ Nein' },
-                  { label: 'MFA', value: botInfo.mfa_enabled ? '✅ Aktiviert' : '❌ Deaktiviert' },
-                ].map(item => (
-                  <div key={item.label} className="flex items-center justify-between bg-[#0f1117] rounded-lg px-4 py-2.5">
-                    <span className="text-gray-400 text-sm">{item.label}</span>
-                    <span className="text-white text-sm font-medium">{item.value}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-red-400 text-sm">Bot-Infos konnten nicht geladen werden.</p>
+              <img src={avatarUrl} alt="Vorschau" className="w-16 h-16 rounded-full object-cover border border-white/10"
+                onError={e => (e.currentTarget.style.display = 'none')} />
             )}
           </div>
         </div>
       )}
 
-      {/* ─── COMMANDS ────────────────────────────────────────────────────── */}
-      {activeTab === 'commands' && (
+      {/* ─── BERECHTIGUNGEN ─────────────────────────────────────────────────── */}
+      {activeTab === 'permissions' && (
         <div className="space-y-4">
           <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5">
-            <h3 className="text-white font-medium mb-3">⚡ Command Übersicht</h3>
-            <p className="text-gray-400 text-sm mb-4">Alle Commands sind als Slash Commands registriert. Um Commands zu ändern müssen die JS-Dateien im Bot-Repo bearbeitet und neu deployed werden.</p>
+            <h3 className="text-white font-medium mb-1">⚡ Discord Rollen → Command Zugriff</h3>
+            <p className="text-gray-400 text-xs mb-4">Wähle welche Discord-Rollen welche Commands nutzen dürfen. Keine Auswahl = jeder kann den Command nutzen (Discord Standard).</p>
+
+            {discordRoles.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-gray-500 text-sm">Discord Rollen konnten nicht geladen werden.</p>
+                <p className="text-gray-600 text-xs mt-1">Stelle sicher dass NEXT_PUBLIC_BOT_TOKEN gesetzt ist.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {ALL_COMMANDS.map(cmd => {
+                  const allowedRoles = cmdPerms[cmd] || [];
+                  return (
+                    <div key={cmd} className="bg-[#0f1117] rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-white font-mono font-medium text-sm">/{cmd}</p>
+                        <span className="text-gray-500 text-xs">{allowedRoles.length === 0 ? 'Alle' : `${allowedRoles.length} Rolle(n)`}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {discordRoles.map((role: any) => {
+                          const active = allowedRoles.includes(role.id);
+                          const color = role.color ? `#${role.color.toString(16).padStart(6, '0')}` : '#99aab5';
+                          return (
+                            <button key={role.id}
+                              onClick={() => toggleCmdPerm(cmd, role.id, role.name)}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition ${active ? 'opacity-100' : 'opacity-40 hover:opacity-70'}`}
+                              style={active ? { backgroundColor: `${color}20`, color, borderColor: `${color}40` } : { backgroundColor: 'transparent', color: '#6b7280', borderColor: '#374151' }}>
+                              {active ? '✓ ' : ''}{role.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── ZUGRIFF ────────────────────────────────────────────────────────── */}
+      {activeTab === 'access' && (
+        <div className="space-y-4">
+          <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5 space-y-4">
+            <h3 className="text-white font-medium">🔑 Dashboard-Zugriff verwalten</h3>
+            <p className="text-gray-400 text-xs">Nur diese Personen können das Bot-Dashboard sehen. Username muss exakt mit dem TeamPanel-Username übereinstimmen.</p>
+
+            <div className="flex gap-3">
+              <input value={newAccessUser} onChange={e => setNewAccessUser(e.target.value)}
+                placeholder="TeamPanel Username..."
+                className="flex-1 bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-[#5865F2]"
+                onKeyDown={e => e.key === 'Enter' && grantAccess()} />
+              <button onClick={grantAccess} disabled={!newAccessUser.trim()}
+                className="bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-40 text-white font-medium px-5 py-2 rounded-lg text-sm transition">
+                Hinzufügen
+              </button>
+            </div>
+
             <div className="space-y-2">
-              {[
-                { name: 'ban', file: 'src/commands/moderation/ban.js', status: 'aktiv' },
-                { name: 'kick', file: 'src/commands/moderation/kick.js', status: 'aktiv' },
-                { name: 'warn', file: 'src/commands/moderation/warn.js', status: 'aktiv' },
-                { name: 'warns', file: 'src/commands/moderation/warns.js', status: 'aktiv' },
-                { name: 'timeout', file: 'src/commands/moderation/timeout.js', status: 'aktiv' },
-                { name: 'unban', file: 'src/commands/moderation/unban.js', status: 'aktiv' },
-                { name: 'clear', file: 'src/commands/moderation/clear.js', status: 'aktiv' },
-                { name: 'ticket', file: 'src/commands/admin/ticket.js', status: 'aktiv' },
-                { name: 'config', file: 'src/commands/admin/config.js', status: 'aktiv' },
-                { name: 'announce', file: 'src/commands/admin/announce.js', status: 'aktiv' },
-                { name: 'role', file: 'src/commands/admin/role.js', status: 'aktiv' },
-                { name: 'panel', file: 'src/commands/admin/panel.js', status: 'aktiv' },
-                { name: 'userinfo', file: 'src/commands/info/userinfo.js', status: 'aktiv' },
-                { name: 'serverinfo', file: 'src/commands/info/serverinfo.js', status: 'aktiv' },
-                { name: 'help', file: 'src/commands/info/help.js', status: 'aktiv' },
-              ].map(cmd => (
-                <div key={cmd.name} className="flex items-center justify-between bg-[#0f1117] rounded-lg px-4 py-3">
-                  <div>
-                    <p className="text-white text-sm font-mono font-medium">/{cmd.name}</p>
-                    <p className="text-gray-500 text-xs">{cmd.file}</p>
+              {accessList.map(entry => (
+                <div key={entry.id} className="flex items-center justify-between bg-[#0f1117] rounded-lg px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-gradient-to-br from-[#5865F2] to-[#EB459E] rounded-full flex items-center justify-center text-white font-bold text-xs">
+                      {entry.username.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-white text-sm font-medium">{entry.username}</p>
+                      <p className="text-gray-500 text-xs">Hinzugefügt von {entry.granted_by} · {new Date(entry.created_at).toLocaleDateString('de-DE')}</p>
+                    </div>
                   </div>
-                  <span className="text-xs px-2 py-0.5 rounded border bg-green-500/10 text-green-400 border-green-500/30">
-                    {cmd.status}
-                  </span>
+                  {entry.username !== 'jxkerlds' ? (
+                    <button onClick={() => revokeAccess(entry.username)}
+                      className="text-xs px-3 py-1.5 rounded-lg border bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20 transition">
+                      Entfernen
+                    </button>
+                  ) : (
+                    <span className="text-xs px-3 py-1.5 rounded-lg border bg-yellow-500/10 text-yellow-400 border-yellow-500/30">
+                      👑 Owner
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -439,25 +566,45 @@ export default function BotDashboardPage() {
         </div>
       )}
 
-      {/* ─── LOGS ────────────────────────────────────────────────────────── */}
+      {/* ─── LOGS ───────────────────────────────────────────────────────────── */}
       {activeTab === 'logs' && (
         <div className="space-y-4">
+          {/* Verwarnungen */}
           <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5">
-            <h3 className="text-white font-medium mb-3">📋 Letzte Verwarnungen</h3>
-            {logs.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-4">Keine Verwarnungen vorhanden</p>
+            <h3 className="text-white font-medium mb-3">⚠️ Verwarnungen ({warns.length})</h3>
+            {warns.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-4">Keine Verwarnungen</p>
             ) : (
-              <div className="space-y-2">
-                {logs.map(log => (
-                  <div key={log.id} className="bg-[#0f1117] rounded-lg px-4 py-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-white text-sm font-medium">{log.username}</p>
-                        <p className="text-gray-400 text-xs mt-0.5">📝 {log.reason}</p>
-                        <p className="text-gray-500 text-xs mt-0.5">🛡️ {log.moderator_name}</p>
-                      </div>
-                      <p className="text-gray-500 text-xs">{new Date(log.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {warns.map(w => (
+                  <div key={w.id} className="flex items-center justify-between bg-[#0f1117] rounded-lg px-4 py-3">
+                    <div>
+                      <p className="text-white text-sm font-medium">{w.username}</p>
+                      <p className="text-gray-400 text-xs">📝 {w.reason} · 🛡️ {w.moderator_name}</p>
                     </div>
+                    <p className="text-gray-500 text-xs flex-shrink-0">{new Date(w.created_at).toLocaleDateString('de-DE')}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Tickets */}
+          <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5">
+            <h3 className="text-white font-medium mb-3">🎫 Tickets ({tickets.length})</h3>
+            {tickets.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-4">Keine Tickets</p>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {tickets.map(t => (
+                  <div key={t.id} className="flex items-center justify-between bg-[#0f1117] rounded-lg px-4 py-3">
+                    <div>
+                      <p className="text-white text-sm font-medium">{t.username}</p>
+                      <p className="text-gray-400 text-xs">📋 {t.category}</p>
+                    </div>
+                    <span className={`text-xs px-2 py-1 rounded border ${t.status === 'open' ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-gray-500/10 text-gray-400 border-gray-500/30'}`}>
+                      {t.status === 'open' ? 'Offen' : 'Geschlossen'}
+                    </span>
                   </div>
                 ))}
               </div>
