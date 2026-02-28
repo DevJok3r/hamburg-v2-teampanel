@@ -404,7 +404,7 @@ export default function EvaluationsPage() {
                     className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
                     Details
                   </button>
-                  {ev.status === 'draft' && (
+                   {(ev.status === 'draft' || myRole === 'top_management') && (
                     <>
                       <button onClick={() => {
                         setEditEval(ev);
