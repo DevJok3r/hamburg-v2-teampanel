@@ -22,10 +22,13 @@ export type AttendanceStatus = 'present' | 'excused' | 'absent';
 export type EntryType = 'misconduct' | 'positive' | 'other';
 export type ApplicationStatus = 'pending' | 'approved' | 'rejected';
 
+export type Department = 'moderation_team' | 'development_team' | 'social_media_team' | 'event_team';
+
 export interface Profile {
   id: string;
   username: string;
   role: UserRole;
+  departments: Department[];
   team_lead_department: TeamLeadDepartment | null;
   created_at: string;
   last_sign_in_at: string | null;

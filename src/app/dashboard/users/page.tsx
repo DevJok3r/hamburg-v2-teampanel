@@ -7,22 +7,30 @@ import { can, ROLE_LABELS, ROLE_HIERARCHY } from '@/lib/permissions';
 import RoleBadge from '@/components/RoleBadge';
 import Link from 'next/link';
 
-type ModalType = 'password' | 'username' | 'role' | 'deactivate' | 'activate' | null;
+type ModalType = 'password' | 'username' | 'role' | 'deactivate' | 'activate' | 'departments' | null;
+
+const DEPARTMENTS = [
+  { key: 'moderation_team',   label: 'Moderation Team' },
+  { key: 'social_media_team', label: 'Social Media Team' },
+  { key: 'event_team',        label: 'Event Team' },
+  { key: 'development_team',  label: 'Development Team' },
+];
 
 export default function UsersPage() {
-  const [users, setUsers]           = useState<Profile[]>([]);
-  const [myRole, setMyRole]         = useState<UserRole | null>(null);
-  const [myId, setMyId]             = useState<string>('');
-  const [loading, setLoading]       = useState(true);
+  const [users, setUsers]               = useState<Profile[]>([]);
+  const [myRole, setMyRole]             = useState<UserRole | null>(null);
+  const [myId, setMyId]                 = useState<string>('');
+  const [loading, setLoading]           = useState(true);
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
-  const [modalType, setModalType]   = useState<ModalType>(null);
-  const [inputValue, setInputValue] = useState('');
+  const [modalType, setModalType]       = useState<ModalType>(null);
+  const [inputValue, setInputValue]     = useState('');
   const [selectedRole, setSelectedRole] = useState<UserRole>('moderator');
-  const [error, setError]           = useState('');
-  const [success, setSuccess]       = useState('');
+  const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
+  const [error, setError]               = useState('');
+  const [success, setSuccess]           = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('active');
-  const [search, setSearch]         = useState('');
+  const [search, setSearch]             = useState('');
 
   const supabase = createClientSupabaseClient();
   const isTopManagement = myRole === 'top_management';
@@ -45,6 +53,7 @@ export default function UsersPage() {
     setModalType(type);
     setInputValue('');
     setSelectedRole(user.role);
+    setSelectedDepts((user as any).departments || []);
     setError('');
     setSuccess('');
   }
@@ -72,14 +81,12 @@ export default function UsersPage() {
         if (!res.ok) { setError('Fehler beim Ändern.'); setActionLoading(false); return; }
         setSuccess('Passwort erfolgreich geändert!');
       }
-
       else if (modalType === 'username') {
         if (inputValue.trim().length < 3) { setError('Mindestens 3 Zeichen.'); setActionLoading(false); return; }
         const { error: err } = await supabase.from('profiles').update({ username: inputValue.trim() }).eq('id', selectedUser.id);
         if (err) { setError('Fehler: ' + err.message); setActionLoading(false); return; }
         setSuccess('Benutzername erfolgreich geändert!');
       }
-
       else if (modalType === 'role') {
         if (!isTopManagement && ROLE_HIERARCHY[selectedRole] >= ROLE_HIERARCHY[myRole]) {
           setError('Du kannst keine gleichwertige oder höhere Rolle vergeben.');
@@ -89,13 +96,16 @@ export default function UsersPage() {
         if (err) { setError('Fehler: ' + err.message); setActionLoading(false); return; }
         setSuccess('Rolle erfolgreich geändert!');
       }
-
+      else if (modalType === 'departments') {
+        const { error: err } = await supabase.from('profiles').update({ departments: selectedDepts }).eq('id', selectedUser.id);
+        if (err) { setError('Fehler: ' + err.message); setActionLoading(false); return; }
+        setSuccess('Abteilungen erfolgreich gespeichert!');
+      }
       else if (modalType === 'deactivate') {
         const { error: err } = await supabase.from('profiles').update({ is_active: false }).eq('id', selectedUser.id);
         if (err) { setError('Fehler: ' + err.message); setActionLoading(false); return; }
         setSuccess('Benutzer deaktiviert!');
       }
-
       else if (modalType === 'activate') {
         const { error: err } = await supabase.from('profiles').update({ is_active: true }).eq('id', selectedUser.id);
         if (err) { setError('Fehler: ' + err.message); setActionLoading(false); return; }
@@ -127,11 +137,12 @@ export default function UsersPage() {
           <div className="bg-[#1a1d27] border border-white/10 rounded-2xl p-6 w-full max-w-md space-y-4">
             <div>
               <h2 className="text-white font-bold text-lg">
-                {modalType === 'password'   && 'Passwort ändern'}
-                {modalType === 'username'   && 'Benutzername ändern'}
-                {modalType === 'role'       && 'Rolle ändern'}
-                {modalType === 'deactivate' && 'Benutzer deaktivieren'}
-                {modalType === 'activate'   && 'Benutzer aktivieren'}
+                {modalType === 'password'    && 'Passwort ändern'}
+                {modalType === 'username'    && 'Benutzername ändern'}
+                {modalType === 'role'        && 'Rolle ändern'}
+                {modalType === 'departments' && 'Abteilungen bearbeiten'}
+                {modalType === 'deactivate'  && 'Benutzer deaktivieren'}
+                {modalType === 'activate'    && 'Benutzer aktivieren'}
               </h2>
               <p className="text-gray-400 text-sm mt-1">
                 Aktion für <span className="text-blue-400 font-medium">{selectedUser.username}</span>
@@ -146,18 +157,34 @@ export default function UsersPage() {
 
             {modalType === 'username' && (
               <input type="text" value={inputValue} onChange={e => setInputValue(e.target.value)}
-                placeholder="Neuer Benutzername..."
-                defaultValue={selectedUser.username}
+                placeholder={selectedUser.username}
                 className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-3 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500" />
             )}
 
             {modalType === 'role' && (
               <select value={selectedRole} onChange={e => setSelectedRole(e.target.value as UserRole)}
                 className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-500">
-                {allRoles.filter(r => isTopManagement || ROLE_HIERARCHY[r] < ROLE_HIERARCHY[myRole]).map(r => (
+                {allRoles.filter(r => isTopManagement || ROLE_HIERARCHY[r] < ROLE_HIERARCHY[myRole!]).map(r => (
                   <option key={r} value={r}>{ROLE_LABELS[r]}</option>
                 ))}
               </select>
+            )}
+
+            {modalType === 'departments' && (
+              <div className="space-y-2">
+                <p className="text-gray-400 text-xs">Mehrere Abteilungen möglich</p>
+                {DEPARTMENTS.map(dept => (
+                  <label key={dept.key} className="flex items-center gap-3 bg-[#0f1117] rounded-lg px-4 py-3 cursor-pointer hover:bg-white/5 transition">
+                    <input type="checkbox"
+                      checked={selectedDepts.includes(dept.key)}
+                      onChange={() => setSelectedDepts(prev =>
+                        prev.includes(dept.key) ? prev.filter(d => d !== dept.key) : [...prev, dept.key]
+                      )}
+                      className="rounded accent-blue-500" />
+                    <span className="text-white text-sm">{dept.label}</span>
+                  </label>
+                ))}
+              </div>
             )}
 
             {(modalType === 'deactivate' || modalType === 'activate') && (
@@ -240,14 +267,14 @@ export default function UsersPage() {
               <tr className="border-b border-white/5">
                 <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-6 py-3">Benutzer</th>
                 <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-6 py-3">Rolle</th>
+                <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-6 py-3">Abteilungen</th>
                 <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-6 py-3">Status</th>
                 <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-6 py-3">Letzter Login</th>
-                <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-6 py-3">Erstellt am</th>
                 <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-6 py-3">Aktionen</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {filtered.map((user: Profile) => (
+              {filtered.map((user: any) => (
                 <tr key={user.id} className="hover:bg-white/2 transition">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
@@ -259,6 +286,17 @@ export default function UsersPage() {
                   </td>
                   <td className="px-6 py-4"><RoleBadge role={user.role} /></td>
                   <td className="px-6 py-4">
+                    <div className="flex gap-1 flex-wrap">
+                      {(user.departments || []).length === 0 ? (
+                        <span className="text-gray-600 text-xs">–</span>
+                      ) : (user.departments || []).map((d: string) => (
+                        <span key={d} className="text-xs px-2 py-0.5 rounded border bg-cyan-500/10 text-cyan-400 border-cyan-500/30">
+                          {DEPARTMENTS.find(x => x.key === d)?.label || d}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
                     <span className={`text-xs px-2 py-1 rounded-md border font-medium ${user.is_active ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>
                       {user.is_active ? 'Aktiv' : 'Deaktiviert'}
                     </span>
@@ -266,21 +304,20 @@ export default function UsersPage() {
                   <td className="px-6 py-4 text-gray-400 text-sm">
                     {user.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Noch nie'}
                   </td>
-                  <td className="px-6 py-4 text-gray-400 text-sm">
-                    {new Date(user.created_at).toLocaleDateString('de-DE')}
-                  </td>
                   <td className="px-6 py-4">
                     <div className="flex gap-2 flex-wrap">
-                      {/* Rolle ändern – Top Management & Management */}
                       {can.changeUserRole(myRole, user.role) && user.id !== myId && (
                         <button onClick={() => openModal(user, 'role')}
                           className="bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
                           Rolle
                         </button>
                       )}
-                      {/* Nur Top Management */}
                       {isTopManagement && user.id !== myId && (
                         <>
+                          <button onClick={() => openModal(user, 'departments')}
+                            className="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
+                            Abteilungen
+                          </button>
                           <button onClick={() => openModal(user, 'username')}
                             className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
                             Username

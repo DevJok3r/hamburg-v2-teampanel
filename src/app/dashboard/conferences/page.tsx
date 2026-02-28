@@ -34,7 +34,7 @@ const CONFERENCE_TYPES: { key: ConferenceType; label: string }[] = [
   { key: 'top_management',     label: 'Top Management Konferenz' },
 ];
 
-const TARGET_ROLES: { key: string; label: string }[] = [
+const TARGET_GROUPS: { key: string; label: string }[] = [
   { key: 'moderation_team',   label: 'Moderation Team' },
   { key: 'social_media_team', label: 'Social Media Team' },
   { key: 'event_team',        label: 'Event Team' },
@@ -45,26 +45,20 @@ const TARGET_ROLES: { key: string; label: string }[] = [
 ];
 
 const CATEGORIES: { key: ConferenceStatus; label: string; icon: string }[] = [
-  { key: 'scheduled', label: 'Geplant',       icon: '📅' },
-  { key: 'active',    label: 'Aktiv',          icon: '🟢' },
-  { key: 'completed', label: 'Abgeschlossen',  icon: '✅' },
-  { key: 'cancelled', label: 'Abgesagt',       icon: '❌' },
+  { key: 'scheduled', label: 'Geplant',      icon: '📅' },
+  { key: 'active',    label: 'Aktiv',         icon: '🟢' },
+  { key: 'completed', label: 'Abgeschlossen', icon: '✅' },
+  { key: 'cancelled', label: 'Abgesagt',      icon: '❌' },
 ];
 
 type FormData = {
-  title: string;
-  description: string;
-  scheduled_at: string;
-  conference_type: ConferenceType;
-  target_roles: string[];
-  extra_user_ids: string[];
+  title: string; description: string; scheduled_at: string;
+  conference_type: ConferenceType; target_roles: string[]; extra_user_ids: string[];
 };
 
 const EMPTY_FORM: FormData = {
   title: '', description: '', scheduled_at: '',
-  conference_type: 'general',
-  target_roles: [],
-  extra_user_ids: [],
+  conference_type: 'general', target_roles: [], extra_user_ids: [],
 };
 
 function toLocalDatetimeValue(isoString: string): string {
@@ -72,50 +66,45 @@ function toLocalDatetimeValue(isoString: string): string {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
-// ─── ConferenceForm außerhalb der Hauptkomponente ─────────────────────────────
+// Prüft ob ein Mitglied zu einer Zielgruppe gehört (role ODER department)
+function memberMatchesTargets(member: any, targetRoles: string[]): boolean {
+  if (targetRoles.includes(member.role)) return true;
+  const depts: string[] = member.departments || [];
+  return depts.some((d: string) => targetRoles.includes(d));
+}
+
+// ─── ConferenceForm außerhalb ────────────────────────────────────────────────
 function ConferenceForm({ data, setData, onSave, onCancel, title, members }: {
   data: FormData;
   setData: React.Dispatch<React.SetStateAction<FormData>>;
   onSave: () => void;
   onCancel: () => void;
   title: string;
-  members: Profile[];
+  members: any[];
 }) {
   return (
     <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5 space-y-4">
       <h3 className="text-white font-medium">{title}</h3>
 
-      <input
-        value={data.title}
-        onChange={e => setData(p => ({ ...p, title: e.target.value }))}
+      <input value={data.title} onChange={e => setData(p => ({ ...p, title: e.target.value }))}
         placeholder="Titel der Konferenz..."
-        className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500"
-      />
+        className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500" />
 
-      <textarea
-        value={data.description}
-        onChange={e => setData(p => ({ ...p, description: e.target.value }))}
+      <textarea value={data.description} onChange={e => setData(p => ({ ...p, description: e.target.value }))}
         placeholder="Beschreibung (optional)..." rows={2}
-        className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none"
-      />
+        className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
 
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="text-gray-400 text-xs mb-1 block">Datum & Uhrzeit *</label>
-          <input
-            type="datetime-local"
-            value={data.scheduled_at}
+          <input type="datetime-local" value={data.scheduled_at}
             onChange={e => setData(p => ({ ...p, scheduled_at: e.target.value }))}
-            className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
-          />
+            className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" />
         </div>
         <div>
           <label className="text-gray-400 text-xs mb-1 block">Konferenztyp *</label>
-          <select
-            value={data.conference_type}
-            onChange={e => setData(p => ({ ...p, conference_type: e.target.value as ConferenceType }))}
-            className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
-          >
+          <select value={data.conference_type} onChange={e => setData(p => ({ ...p, conference_type: e.target.value as ConferenceType }))}
+            className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500">
             {CONFERENCE_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
           </select>
         </div>
@@ -126,7 +115,7 @@ function ConferenceForm({ data, setData, onSave, onCancel, title, members }: {
           Zielgruppe / Abteilung * <span className="text-red-400">(mind. eine Pflicht)</span>
         </label>
         <div className="flex flex-wrap gap-2">
-          {TARGET_ROLES.map(r => (
+          {TARGET_GROUPS.map(r => (
             <button key={r.key} type="button"
               onClick={() => setData(p => ({
                 ...p,
@@ -144,15 +133,34 @@ function ConferenceForm({ data, setData, onSave, onCancel, title, members }: {
         </div>
       </div>
 
+      {/* Vorschau wer eingeladen wird */}
+      {data.target_roles.length > 0 && (
+        <div>
+          <label className="text-gray-400 text-xs mb-2 block">
+            Eingeladene Mitglieder ({members.filter(m => memberMatchesTargets(m, data.target_roles)).length})
+          </label>
+          <div className="bg-[#0f1117] rounded-lg p-3 max-h-32 overflow-y-auto space-y-1">
+            {members.filter(m => memberMatchesTargets(m, data.target_roles)).map(m => (
+              <div key={m.id} className="flex items-center gap-2 px-2 py-1">
+                <div className="w-5 h-5 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                  {m.username.charAt(0).toUpperCase()}
+                </div>
+                <span className="text-white text-xs">{m.username}</span>
+                <RoleBadge role={m.role as UserRole} size="xs" />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div>
         <label className="text-gray-400 text-xs mb-2 block">Zusätzliche Personen (optional)</label>
         <div className="bg-[#0f1117] rounded-lg p-3 max-h-40 overflow-y-auto space-y-1">
           {members
-            .filter(m => !data.target_roles.includes(m.role))
+            .filter(m => !memberMatchesTargets(m, data.target_roles))
             .map(m => (
               <label key={m.id} className="flex items-center gap-2 cursor-pointer hover:bg-white/5 rounded px-2 py-1">
-                <input
-                  type="checkbox"
+                <input type="checkbox"
                   checked={data.extra_user_ids.includes(m.id)}
                   onChange={() => setData(p => ({
                     ...p,
@@ -160,8 +168,7 @@ function ConferenceForm({ data, setData, onSave, onCancel, title, members }: {
                       ? p.extra_user_ids.filter(x => x !== m.id)
                       : [...p.extra_user_ids, m.id],
                   }))}
-                  className="rounded"
-                />
+                  className="rounded" />
                 <span className="text-white text-xs">{m.username}</span>
                 <RoleBadge role={m.role as UserRole} size="xs" />
               </label>
@@ -187,7 +194,7 @@ function ConferenceForm({ data, setData, onSave, onCancel, title, members }: {
 // ─── Hauptkomponente ──────────────────────────────────────────────────────────
 export default function ConferencesPage() {
   const [conferences, setConferences]           = useState<any[]>([]);
-  const [members, setMembers]                   = useState<Profile[]>([]);
+  const [members, setMembers]                   = useState<any[]>([]);
   const [myRole, setMyRole]                     = useState<UserRole | null>(null);
   const [myId, setMyId]                         = useState<string>('');
   const [myUsername, setMyUsername]             = useState<string>('');
@@ -222,7 +229,8 @@ export default function ConferencesPage() {
       .from('conferences')
       .select('*, profiles!conferences_created_by_fkey(username, role)')
       .order('scheduled_at', { ascending: false });
-    const { data: allMembers } = await supabase.from('profiles').select('*').eq('is_active', true).order('username');
+    const { data: allMembers } = await supabase
+      .from('profiles').select('id, username, role, departments').eq('is_active', true).order('username');
     setConferences(confs || []);
     setMembers(allMembers || []);
     setLoading(false);
@@ -235,18 +243,13 @@ export default function ConferencesPage() {
   async function createConference() {
     if (!form.title.trim() || !form.scheduled_at || form.target_roles.length === 0) return;
     await supabase.from('conferences').insert({
-      title: form.title,
-      description: form.description || null,
+      title: form.title, description: form.description || null,
       scheduled_at: new Date(form.scheduled_at).toISOString(),
-      created_by: myId,
-      conference_type: form.conference_type,
-      target_roles: form.target_roles,
-      extra_user_ids: form.extra_user_ids,
+      created_by: myId, conference_type: form.conference_type,
+      target_roles: form.target_roles, extra_user_ids: form.extra_user_ids,
     });
     await fireAutomation('conference_created', {
-      titel: form.title,
-      datum: new Date(form.scheduled_at).toLocaleString('de-DE'),
-      ersteller: myUsername,
+      titel: form.title, datum: new Date(form.scheduled_at).toLocaleString('de-DE'), ersteller: myUsername,
     });
     setForm({ ...EMPTY_FORM });
     setShowForm(false);
@@ -256,12 +259,10 @@ export default function ConferencesPage() {
   async function saveEdit() {
     if (!editConference) return;
     await supabase.from('conferences').update({
-      title: editForm.title,
-      description: editForm.description || null,
+      title: editForm.title, description: editForm.description || null,
       scheduled_at: new Date(editForm.scheduled_at).toISOString(),
       conference_type: editForm.conference_type,
-      target_roles: editForm.target_roles,
-      extra_user_ids: editForm.extra_user_ids,
+      target_roles: editForm.target_roles, extra_user_ids: editForm.extra_user_ids,
     }).eq('id', editConference.id);
     await fireAutomation('conference_updated', { titel: editForm.title, ersteller: myUsername });
     setEditConference(null);
@@ -278,7 +279,7 @@ export default function ConferencesPage() {
   async function startConference(conference: any) {
     await supabase.from('conferences').update({ status: 'active', started_at: new Date().toISOString() }).eq('id', conference.id);
     const attendanceRows = members
-      .filter(m => conference.target_roles.includes(m.role) || conference.extra_user_ids.includes(m.id))
+      .filter(m => memberMatchesTargets(m, conference.target_roles) || conference.extra_user_ids.includes(m.id))
       .map(m => ({ conference_id: conference.id, user_id: m.id, status: 'absent' as AttendanceStatus, note: null }));
     await supabase.from('conference_attendance').upsert(attendanceRows, { onConflict: 'conference_id,user_id' });
     await fireAutomation('conference_started', { titel: conference.title, datum: new Date().toLocaleString('de-DE'), ersteller: myUsername });
@@ -311,16 +312,13 @@ export default function ConferencesPage() {
     setActiveAttendance(prev => prev
       ? { ...prev, attendance: prev.attendance.map(a => a.user_id === userId ? { ...a, note: noteText || null } : a) }
       : null);
-    setEditingNote(null);
-    setNoteText('');
+    setEditingNote(null); setNoteText('');
   }
 
   async function endConference(id: string) {
     await supabase.from('conferences').update({ status: 'completed', ended_at: new Date().toISOString() }).eq('id', id);
     await fireAutomation('conference_ended', { titel: activeAttendance?.conference.title || '', ersteller: myUsername });
-    setActiveAttendance(null);
-    setActiveTab('completed');
-    load();
+    setActiveAttendance(null); setActiveTab('completed'); load();
   }
 
   async function deleteConference(id: string) {
@@ -349,14 +347,8 @@ export default function ConferencesPage() {
       </div>
 
       {showForm && canManage && (
-        <ConferenceForm
-          data={form}
-          setData={setForm}
-          onSave={createConference}
-          onCancel={() => setShowForm(false)}
-          title="Neue Konferenz ankündigen"
-          members={members}
-        />
+        <ConferenceForm data={form} setData={setForm} onSave={createConference}
+          onCancel={() => setShowForm(false)} title="Neue Konferenz ankündigen" members={members} />
       )}
 
       {/* Anwesenheitsliste Modal */}
@@ -433,13 +425,9 @@ export default function ConferencesPage() {
                         <input value={noteText} onChange={e => setNoteText(e.target.value)} placeholder="Bemerkung..."
                           className="flex-1 bg-[#1a1d27] border border-white/10 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-blue-500" />
                         <button onClick={() => saveNote(activeAttendance.conference.id, a.user_id)}
-                          className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-lg transition">
-                          Speichern
-                        </button>
+                          className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-lg transition">Speichern</button>
                         <button onClick={() => { setEditingNote(null); setNoteText(''); }}
-                          className="bg-white/5 hover:bg-white/10 text-gray-300 text-xs px-3 py-1.5 rounded-lg transition">
-                          Abbrechen
-                        </button>
+                          className="bg-white/5 hover:bg-white/10 text-gray-300 text-xs px-3 py-1.5 rounded-lg transition">Abbrechen</button>
                       </div>
                     ) : (
                       <div className="flex items-center gap-2">
@@ -464,14 +452,8 @@ export default function ConferencesPage() {
       {editConference && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-[#1a1d27] border border-white/10 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <ConferenceForm
-              data={editForm}
-              setData={setEditForm}
-              onSave={saveEdit}
-              onCancel={() => setEditConference(null)}
-              title="Konferenz bearbeiten"
-              members={members}
-            />
+            <ConferenceForm data={editForm} setData={setEditForm} onSave={saveEdit}
+              onCancel={() => setEditConference(null)} title="Konferenz bearbeiten" members={members} />
           </div>
         </div>
       )}
@@ -485,9 +467,7 @@ export default function ConferencesPage() {
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition
                 ${activeTab === cat.key ? 'bg-blue-600 text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10'}`}>
               {cat.icon} {cat.label}
-              <span className={`text-xs px-1.5 py-0.5 rounded-full ${activeTab === cat.key ? 'bg-white/20' : 'bg-white/10'}`}>
-                {count}
-              </span>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${activeTab === cat.key ? 'bg-white/20' : 'bg-white/10'}`}>{count}</span>
             </button>
           );
         })}
@@ -497,9 +477,7 @@ export default function ConferencesPage() {
       {loading ? (
         <div className="text-gray-400 text-center py-12">Lade...</div>
       ) : filteredConferences.length === 0 ? (
-        <div className="text-center py-8 text-gray-500 text-sm">
-          Keine {STATUS_LABELS[activeTab].toLowerCase()} Konferenzen
-        </div>
+        <div className="text-center py-8 text-gray-500 text-sm">Keine {STATUS_LABELS[activeTab].toLowerCase()} Konferenzen</div>
       ) : (
         <div className="space-y-3">
           {filteredConferences.map(conf => (
@@ -520,7 +498,7 @@ export default function ConferencesPage() {
                     <span>📅 {new Date(conf.scheduled_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                     {conf.profiles && <span>👤 {conf.profiles.username}</span>}
                     {conf.target_roles?.length > 0 && (
-                      <span>🎯 {conf.target_roles.map((r: string) => TARGET_ROLES.find(t => t.key === r)?.label || r).join(', ')}</span>
+                      <span>🎯 {conf.target_roles.map((r: string) => TARGET_GROUPS.find(t => t.key === r)?.label || r).join(', ')}</span>
                     )}
                   </div>
                 </div>
@@ -534,8 +512,7 @@ export default function ConferencesPage() {
                       <button onClick={() => {
                         setEditConference(conf);
                         setEditForm({
-                          title: conf.title,
-                          description: conf.description || '',
+                          title: conf.title, description: conf.description || '',
                           scheduled_at: toLocalDatetimeValue(conf.scheduled_at),
                           conference_type: conf.conference_type || 'general',
                           target_roles: conf.target_roles || [],
