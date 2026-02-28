@@ -57,7 +57,6 @@ export default function BotDashboardPage() {
   const [tickets, setTickets] = useState<any[]>([]);
 
   const supabase = createClientSupabaseClient();
-  const BOT_TOKEN = process.env.NEXT_PUBLIC_BOT_TOKEN || '';
 
   function showMsg(text: string, ok = true) {
     setMsg({ text, ok });
@@ -83,9 +82,7 @@ export default function BotDashboardPage() {
 
     // Bot Info
     try {
-      const res = await fetch('https://discord.com/api/v10/users/@me', {
-        headers: { Authorization: `Bot ${BOT_TOKEN}` },
-      });
+      const res = await fetch('/api/discord-bot-info');
       if (res.ok) setBotInfo(await res.json());
     } catch {}
 
@@ -115,21 +112,10 @@ export default function BotDashboardPage() {
   }, []);
 
   async function loadDiscordRoles() {
-    if (!BOT_TOKEN) return;
     try {
-      // Guilds des Bots holen
-      const gRes = await fetch('https://discord.com/api/v10/users/@me/guilds', {
-        headers: { Authorization: `Bot ${BOT_TOKEN}` },
-      });
-      const guilds = await gRes.json();
-      if (!guilds?.length) return;
-      const guildId = guilds[0].id;
-
-      const rRes = await fetch(`https://discord.com/api/v10/guilds/${guildId}/roles`, {
-        headers: { Authorization: `Bot ${BOT_TOKEN}` },
-      });
-      const roles = await rRes.json();
-      setDiscordRoles((roles || []).filter((r: any) => r.name !== '@everyone').sort((a: any, b: any) => b.position - a.position));
+      const res = await fetch('/api/discord-roles');
+      const data = await res.json();
+      setDiscordRoles(data.roles || []);
     } catch {}
   }
 
@@ -150,9 +136,9 @@ export default function BotDashboardPage() {
   async function saveBotUsername() {
     if (!newUsername.trim()) return;
     setSaving(true);
-    const res = await fetch('https://discord.com/api/v10/users/@me', {
-      method: 'PATCH',
-      headers: { Authorization: `Bot ${BOT_TOKEN}`, 'Content-Type': 'application/json' },
+    const res = await fetch('/api/discord-bot-edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: newUsername }),
     });
     if (res.ok) {
@@ -161,7 +147,7 @@ export default function BotDashboardPage() {
       showMsg('✅ Bot-Name geändert!');
     } else {
       const err = await res.json();
-      showMsg(`❌ ${err.message}`, false);
+      showMsg(`❌ ${err.error || err.message}`, false);
     }
     setSaving(false);
   }
@@ -177,13 +163,13 @@ export default function BotDashboardPage() {
       reader.readAsDataURL(blob);
       reader.onloadend = async () => {
         const base64 = reader.result as string;
-        const res = await fetch('https://discord.com/api/v10/users/@me', {
-          method: 'PATCH',
-          headers: { Authorization: `Bot ${BOT_TOKEN}`, 'Content-Type': 'application/json' },
+        const res = await fetch('/api/discord-bot-edit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ avatar: base64 }),
         });
         if (res.ok) { setBotInfo(await res.json()); showMsg('✅ Avatar geändert!'); }
-        else { const err = await res.json(); showMsg(`❌ ${err.message}`, false); }
+        else { const err = await res.json(); showMsg(`❌ ${err.error || err.message}`, false); }
         setSaving(false);
       };
     } catch { showMsg('❌ Bild konnte nicht geladen werden.', false); setSaving(false); }
