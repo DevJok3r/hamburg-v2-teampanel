@@ -292,82 +292,86 @@ export default function ExamsPage() {
   if (!canManage) return <div className="text-red-400 text-center py-12">Nur Junior Management+ kann Prüfungen verwalten.</div>;
 
   // ─── FRAGE EDITOR COMPONENT ───────────────────────────────────────────────
-  function QuestionEditor({ q, i }: { q: WrittenQuestion; i: number }) {
-    return (
-      <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-4 space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className={`text-xs font-bold px-2 py-0.5 rounded border ${
-              q.type === 'open' ? 'text-blue-400 bg-blue-500/10 border-blue-500/30' :
-              q.type === 'multiple_choice' ? 'text-purple-400 bg-purple-500/10 border-purple-500/30' :
-              'text-green-400 bg-green-500/10 border-green-500/30'
-            }`}>
-              {q.type === 'open' ? '📝 Offen' : q.type === 'multiple_choice' ? '🔘 Multiple Choice' : '✅ Wahr/Falsch'}
-            </span>
-            <span className="text-gray-500 text-xs">Frage {i + 1}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <select value={q.type} onChange={e => {
-              const t = e.target.value as QuestionType;
-              updateWrittenQ(q.id, 'type', t);
-              if (t === 'multiple_choice') updateWrittenQ(q.id, 'options', ['', '', '', '']);
-              if (t === 'true_false') { updateWrittenQ(q.id, 'options', []); updateWrittenQ(q.id, 'correct_answer', 'true'); }
-              if (t === 'open') { updateWrittenQ(q.id, 'options', []); updateWrittenQ(q.id, 'correct_answer', ''); }
-            }}
-              className="bg-[#0f1117] border border-white/10 rounded-lg px-2 py-1 text-white text-xs focus:outline-none">
-              <option value="open">📝 Offene Frage</option>
-              <option value="multiple_choice">🔘 Multiple Choice</option>
-              <option value="true_false">✅ Wahr/Falsch</option>
-            </select>
-            <button onClick={() => setWrittenForm(p => p.filter(fq => fq.id !== q.id))}
-              className="text-gray-500 hover:text-red-400 text-xs transition">✕</button>
+function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
+  q: WrittenQuestion;
+  i: number;
+  onUpdate: (id: number | string, field: string, value: any) => void;
+  onUpdateOption: (qId: number | string, idx: number, value: string) => void;
+  onRemove: (id: number | string) => void;
+}) {
+  return (
+    <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className={`text-xs font-bold px-2 py-0.5 rounded border ${
+            q.type === 'open' ? 'text-blue-400 bg-blue-500/10 border-blue-500/30' :
+            q.type === 'multiple_choice' ? 'text-purple-400 bg-purple-500/10 border-purple-500/30' :
+            'text-green-400 bg-green-500/10 border-green-500/30'}`}>
+            {q.type === 'open' ? '📝 Offen' : q.type === 'multiple_choice' ? '🔘 Multiple Choice' : '✅ Wahr/Falsch'}
+          </span>
+          <span className="text-gray-500 text-xs">Frage {i + 1}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <select value={q.type} onChange={e => {
+            const t = e.target.value as QuestionType;
+            onUpdate(q.id, 'type', t);
+            if (t === 'multiple_choice') onUpdate(q.id, 'options', ['', '', '', '']);
+            if (t === 'true_false') { onUpdate(q.id, 'options', []); onUpdate(q.id, 'correct_answer', 'true'); }
+            if (t === 'open') { onUpdate(q.id, 'options', []); onUpdate(q.id, 'correct_answer', ''); }
+          }}
+            className="bg-[#0f1117] border border-white/10 rounded-lg px-2 py-1 text-white text-xs focus:outline-none">
+            <option value="open">📝 Offene Frage</option>
+            <option value="multiple_choice">🔘 Multiple Choice</option>
+            <option value="true_false">✅ Wahr/Falsch</option>
+          </select>
+          <button onClick={() => onRemove(q.id)} className="text-gray-500 hover:text-red-400 text-xs transition">✕</button>
+        </div>
+      </div>
+
+      <input value={q.section || ''} onChange={e => onUpdate(q.id, 'section', e.target.value)}
+        placeholder="Abschnitt (z.B. Teil A – Multiple Choice) optional..."
+        className="w-full bg-[#0f1117] border border-white/5 rounded-lg px-3 py-1.5 text-gray-400 placeholder-gray-600 text-xs focus:outline-none focus:border-white/20" />
+
+      <textarea value={q.question} onChange={e => onUpdate(q.id, 'question', e.target.value)}
+        placeholder="Frage eingeben..." rows={2}
+        className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
+
+      {q.type === 'multiple_choice' && (
+        <div className="space-y-2">
+          <p className="text-gray-400 text-xs">Antwortoptionen (richtige markieren):</p>
+          {q.options.map((opt, oi) => (
+            <div key={oi} className="flex items-center gap-2">
+              <button onClick={() => onUpdate(q.id, 'correct_answer', String(oi))}
+                className={`w-6 h-6 rounded-full border-2 flex-shrink-0 transition flex items-center justify-center ${q.correct_answer === String(oi) ? 'bg-green-500 border-green-500' : 'border-gray-600 hover:border-green-500'}`}>
+                {q.correct_answer === String(oi) && <span className="text-white text-xs">✓</span>}
+              </button>
+              <span className="text-gray-400 text-xs w-5">{['A', 'B', 'C', 'D'][oi]})</span>
+              <input value={opt} onChange={e => onUpdateOption(q.id, oi, e.target.value)}
+                placeholder={`Option ${['A', 'B', 'C', 'D'][oi]}...`}
+                className="flex-1 bg-[#0f1117] border border-white/10 rounded-lg px-3 py-1.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {q.type === 'true_false' && (
+        <div>
+          <p className="text-gray-400 text-xs mb-2">Richtige Antwort:</p>
+          <div className="flex gap-2">
+            <button onClick={() => onUpdate(q.id, 'correct_answer', 'true')}
+              className={`flex-1 py-2 rounded-lg border text-sm font-medium transition ${q.correct_answer === 'true' ? 'bg-green-500/20 border-green-500/50 text-green-400' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-green-500/10'}`}>
+              ✅ Wahr
+            </button>
+            <button onClick={() => onUpdate(q.id, 'correct_answer', 'false')}
+              className={`flex-1 py-2 rounded-lg border text-sm font-medium transition ${q.correct_answer === 'false' ? 'bg-red-500/20 border-red-500/50 text-red-400' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-red-500/10'}`}>
+              ❌ Falsch
+            </button>
           </div>
         </div>
-
-        <input value={q.section || ''} onChange={e => updateWrittenQ(q.id, 'section', e.target.value)}
-          placeholder="Abschnitt (z.B. Teil A – Multiple Choice) optional..."
-          className="w-full bg-[#0f1117] border border-white/5 rounded-lg px-3 py-1.5 text-gray-400 placeholder-gray-600 text-xs focus:outline-none focus:border-white/20" />
-
-        <textarea value={q.question} onChange={e => updateWrittenQ(q.id, 'question', e.target.value)}
-          placeholder="Frage eingeben..." rows={2}
-          className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
-
-        {q.type === 'multiple_choice' && (
-          <div className="space-y-2">
-            <p className="text-gray-400 text-xs">Antwortoptionen (richtige markieren):</p>
-            {q.options.map((opt, oi) => (
-              <div key={oi} className="flex items-center gap-2">
-                <button onClick={() => updateWrittenQ(q.id, 'correct_answer', String(oi))}
-                  className={`w-6 h-6 rounded-full border-2 flex-shrink-0 transition ${q.correct_answer === String(oi) ? 'bg-green-500 border-green-500' : 'border-gray-600 hover:border-green-500'}`}>
-                  {q.correct_answer === String(oi) && <span className="text-white text-xs flex items-center justify-center w-full">✓</span>}
-                </button>
-                <span className="text-gray-400 text-xs w-5">{['A', 'B', 'C', 'D'][oi]})</span>
-                <input value={opt} onChange={e => updateOption(q.id, oi, e.target.value)}
-                  placeholder={`Option ${['A', 'B', 'C', 'D'][oi]}...`}
-                  className="flex-1 bg-[#0f1117] border border-white/10 rounded-lg px-3 py-1.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500" />
-              </div>
-            ))}
-          </div>
-        )}
-
-        {q.type === 'true_false' && (
-          <div>
-            <p className="text-gray-400 text-xs mb-2">Richtige Antwort:</p>
-            <div className="flex gap-2">
-              <button onClick={() => updateWrittenQ(q.id, 'correct_answer', 'true')}
-                className={`flex-1 py-2 rounded-lg border text-sm font-medium transition ${q.correct_answer === 'true' ? 'bg-green-500/20 border-green-500/50 text-green-400' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-green-500/10'}`}>
-                ✅ Wahr
-              </button>
-              <button onClick={() => updateWrittenQ(q.id, 'correct_answer', 'false')}
-                className={`flex-1 py-2 rounded-lg border text-sm font-medium transition ${q.correct_answer === 'false' ? 'bg-red-500/20 border-red-500/50 text-red-400' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-red-500/10'}`}>
-                ❌ Falsch
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
+      )}
+    </div>
+  );
+}
 
   // ─── CREATE / EDIT VIEW ───────────────────────────────────────────────────
   if (view === 'create' || view === 'edit') {
@@ -418,7 +422,7 @@ export default function ExamsPage() {
                 className="bg-green-700 hover:bg-green-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg transition">+ W/F</button>
             </div>
           </div>
-          {writtenForm.map((q, i) => <QuestionEditor key={q.id} q={q} i={i} />)}
+          {writtenForm.map((q, i) => <QuestionEditor key={q.id} q={q} i={i} onUpdate={updateWrittenQ} onUpdateOption={updateOption} onRemove={(id) => setWrittenForm(p => p.filter(fq => fq.id !== id))} />)}
           {writtenForm.length === 0 && (
             <div className="text-center py-5 bg-[#1a1d27] border border-dashed border-white/10 rounded-xl">
               <p className="text-gray-500 text-sm">Fragen hinzufügen mit den Buttons oben</p>
