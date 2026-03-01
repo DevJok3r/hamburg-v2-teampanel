@@ -15,13 +15,22 @@ const DEPARTMENTS = [
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   written_pending:   { label: 'Schriftlich ausstehend',  color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30' },
   written_submitted: { label: 'Schriftlich eingereicht', color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' },
-  oral_pending:      { label: 'Mündlich ausstehend',     color: 'text-orange-400 bg-orange-500/10 border-orange-500/30' },
   oral_done:         { label: 'Mündlich abgeschlossen',  color: 'text-purple-400 bg-purple-500/10 border-purple-500/30' },
   passed:            { label: '✓ Bestanden',              color: 'text-green-400 bg-green-500/10 border-green-500/30' },
   failed:            { label: '✗ Nicht bestanden',        color: 'text-red-400 bg-red-500/10 border-red-500/30' },
 };
 
+type QuestionType = 'open' | 'multiple_choice' | 'true_false';
 type View = 'list' | 'create' | 'edit' | 'detail' | 'oral' | 'practical';
+
+interface WrittenQuestion {
+  id: number | string;
+  question: string;
+  type: QuestionType;
+  options: string[];
+  correct_answer: string;
+  section?: string;
+}
 
 export default function ExamsPage() {
   const [myRole, setMyRole]   = useState<UserRole | null>(null);
@@ -33,7 +42,6 @@ export default function ExamsPage() {
   const [members, setMembers] = useState<any[]>([]);
   const [msg, setMsg]         = useState<{ text: string; ok: boolean } | null>(null);
 
-  // Detail
   const [selectedExam, setSelectedExam]       = useState<any>(null);
   const [writtenQs, setWrittenQs]             = useState<any[]>([]);
   const [oralQs, setOralQs]                   = useState<any[]>([]);
@@ -41,19 +49,16 @@ export default function ExamsPage() {
   const [selectedSession, setSelectedSession] = useState<any>(null);
   const [showAnswersFor, setShowAnswersFor]   = useState<string | null>(null);
 
-  // Create / Edit Form
   const [form, setForm]               = useState({ title: '', description: '', department: 'moderation_team' });
-  const [writtenForm, setWrittenForm] = useState<{ id: number; question: string }[]>([]);
+  const [writtenForm, setWrittenForm] = useState<WrittenQuestion[]>([]);
   const [oralForm, setOralForm]       = useState<{ id: number; question: string; sample_answer: string }[]>([]);
   const [saving, setSaving]           = useState(false);
   const [candidateId, setCandidateId] = useState('');
 
-  // Oral
   const [oralIndex, setOralIndex]     = useState(0);
   const [showAnswer, setShowAnswer]   = useState(false);
   const [oralResults, setOralResults] = useState<Record<string, { passed: boolean; note: string }>>({});
 
-  // Practical
   const [practicalPassed, setPracticalPassed] = useState<boolean | null>(null);
   const [practicalNotes, setPracticalNotes]   = useState('');
   const [overallNotes, setOverallNotes]       = useState('');
@@ -71,16 +76,14 @@ export default function ExamsPage() {
     setMyId(user.id);
     const { data: p } = await supabase.from('profiles').select('role, departments').eq('id', user.id).single();
     if (p) { setMyRole(p.role as UserRole); setMyDepts(p.departments || []); }
-    const { data: m } = await supabase.from('profiles').select('id, username, role, departments').eq('is_active', true).order('username');
+    const { data: m } = await supabase.from('profiles').select('id, username, role').eq('is_active', true).order('username');
     setMembers(m || []);
     await loadExams();
     setLoading(false);
   }
 
   async function loadExams() {
-    const { data } = await supabase.from('exams')
-      .select('*, creator:created_by(username)')
-      .order('created_at', { ascending: false });
+    const { data } = await supabase.from('exams').select('*, creator:created_by(username)').order('created_at', { ascending: false });
     setExams(data || []);
   }
 
@@ -89,7 +92,7 @@ export default function ExamsPage() {
     setShowAnswersFor(null);
     const { data: wq } = await supabase.from('exam_written_questions').select('*').eq('exam_id', exam.id).order('order_index');
     const { data: oq } = await supabase.from('exam_oral_questions').select('*').eq('exam_id', exam.id).order('order_index');
-    const { data: s } = await supabase.from('exam_sessions')
+    const { data: s }  = await supabase.from('exam_sessions')
       .select('*, candidate:candidate_id(username, role), examiner:examiner_id(username)')
       .eq('exam_id', exam.id).order('created_at', { ascending: false });
     setWrittenQs(wq || []);
@@ -100,16 +103,39 @@ export default function ExamsPage() {
 
   useEffect(() => { load(); }, []);
 
-  // Junior Management+ darf verwalten
-const canManage = myRole ? ROLE_HIERARCHY[myRole] >= 80 : false;
+  const canManage = myRole ? ROLE_HIERARCHY[myRole] >= 80 : false;
+  const visibleExams = exams.filter(e =>
+    myRole === 'top_management' ||
+    (myRole === 'management' && myDepts.includes(e.department)) ||
+    (myRole === 'junior_management' && myDepts.includes(e.department))
+  );
 
-const visibleExams = exams.filter(e =>
-  myRole === 'top_management' ||
-  myRole === 'junior_management' && myDepts.includes(e.department) ||
-  myRole === 'management' && myDepts.includes(e.department)
-);
+  // ─── FRAGE HELPERS ────────────────────────────────────────────────────────
+  function newQuestion(type: QuestionType): WrittenQuestion {
+    return {
+      id: Date.now(),
+      question: '',
+      type,
+      options: type === 'multiple_choice' ? ['', '', '', ''] : [],
+      correct_answer: type === 'true_false' ? 'true' : '',
+      section: '',
+    };
+  }
 
-  // ─── CREATE / EDIT ─────────────────────────────────────────────────────────
+  function updateWrittenQ(id: number | string, field: string, value: any) {
+    setWrittenForm(p => p.map(q => q.id === id ? { ...q, [field]: value } : q));
+  }
+
+  function updateOption(qId: number | string, idx: number, value: string) {
+    setWrittenForm(p => p.map(q => {
+      if (q.id !== qId) return q;
+      const opts = [...q.options];
+      opts[idx] = value;
+      return { ...q, options: opts };
+    }));
+  }
+
+  // ─── CREATE / EDIT ────────────────────────────────────────────────────────
   function openCreate() {
     setSelectedExam(null);
     setForm({ title: '', description: '', department: myDepts[0] || 'moderation_team' });
@@ -123,7 +149,10 @@ const visibleExams = exams.filter(e =>
     setForm({ title: exam.title, description: exam.description || '', department: exam.department });
     const { data: wq } = await supabase.from('exam_written_questions').select('*').eq('exam_id', exam.id).order('order_index');
     const { data: oq } = await supabase.from('exam_oral_questions').select('*').eq('exam_id', exam.id).order('order_index');
-    setWrittenForm((wq || []).map((q: any) => ({ id: q.id, question: q.question })));
+    setWrittenForm((wq || []).map((q: any) => ({
+      id: q.id, question: q.question, type: q.type || 'open',
+      options: q.options || [], correct_answer: q.correct_answer || '', section: q.section || '',
+    })));
     setOralForm((oq || []).map((q: any) => ({ id: q.id, question: q.question, sample_answer: q.sample_answer || '' })));
     setView('edit');
   }
@@ -131,47 +160,57 @@ const visibleExams = exams.filter(e =>
   async function saveExam(isEdit: boolean) {
     if (!form.title.trim()) return;
     setSaving(true);
-    if (isEdit && selectedExam) {
-      await supabase.from('exams').update({
-        title: form.title, description: form.description || null, department: form.department,
-      }).eq('id', selectedExam.id);
-      await supabase.from('exam_written_questions').delete().eq('exam_id', selectedExam.id);
-      await supabase.from('exam_oral_questions').delete().eq('exam_id', selectedExam.id);
-      if (writtenForm.filter(q => q.question.trim()).length > 0) {
-        await supabase.from('exam_written_questions').insert(
-          writtenForm.filter(q => q.question.trim()).map((q, i) => ({ exam_id: selectedExam.id, question: q.question, order_index: i }))
-        );
-      }
-      if (oralForm.filter(q => q.question.trim()).length > 0) {
-        await supabase.from('exam_oral_questions').insert(
-          oralForm.filter(q => q.question.trim()).map((q, i) => ({ exam_id: selectedExam.id, question: q.question, sample_answer: q.sample_answer || null, order_index: i }))
-        );
-      }
-      showMsg('✅ Prüfung aktualisiert!');
+    const examId = isEdit && selectedExam ? selectedExam.id : null;
+
+    if (isEdit && examId) {
+      await supabase.from('exams').update({ title: form.title, description: form.description || null, department: form.department }).eq('id', examId);
+      await supabase.from('exam_written_questions').delete().eq('exam_id', examId);
+      await supabase.from('exam_oral_questions').delete().eq('exam_id', examId);
     } else {
       const { data: exam } = await supabase.from('exams').insert({
         title: form.title, description: form.description || null, department: form.department, created_by: myId,
       }).select().single();
-      if (exam) {
-        if (writtenForm.filter(q => q.question.trim()).length > 0) {
-          await supabase.from('exam_written_questions').insert(
-            writtenForm.filter(q => q.question.trim()).map((q, i) => ({ exam_id: exam.id, question: q.question, order_index: i }))
-          );
-        }
-        if (oralForm.filter(q => q.question.trim()).length > 0) {
-          await supabase.from('exam_oral_questions').insert(
-            oralForm.filter(q => q.question.trim()).map((q, i) => ({ exam_id: exam.id, question: q.question, sample_answer: q.sample_answer || null, order_index: i }))
-          );
-        }
-        showMsg('✅ Prüfung erstellt!');
+      if (!exam) { setSaving(false); return; }
+      examId === null && (exam as any) && ((exam as any).id) && Object.assign({ examId: (exam as any).id });
+      // Use exam.id directly
+      const wqs = writtenForm.filter(q => q.question.trim());
+      if (wqs.length > 0) {
+        await supabase.from('exam_written_questions').insert(
+          wqs.map((q, i) => ({ exam_id: (exam as any).id, question: q.question, type: q.type, options: q.options, correct_answer: q.correct_answer, section: q.section || null, order_index: i }))
+        );
       }
+      const oqs = oralForm.filter(q => q.question.trim());
+      if (oqs.length > 0) {
+        await supabase.from('exam_oral_questions').insert(
+          oqs.map((q, i) => ({ exam_id: (exam as any).id, question: q.question, sample_answer: q.sample_answer || null, order_index: i }))
+        );
+      }
+      showMsg('✅ Prüfung erstellt!');
+      await loadExams();
+      setView('list');
+      setSaving(false);
+      return;
     }
+
+    const wqs = writtenForm.filter(q => q.question.trim());
+    if (wqs.length > 0) {
+      await supabase.from('exam_written_questions').insert(
+        wqs.map((q, i) => ({ exam_id: examId, question: q.question, type: q.type, options: q.options, correct_answer: q.correct_answer, section: q.section || null, order_index: i }))
+      );
+    }
+    const oqs = oralForm.filter(q => q.question.trim());
+    if (oqs.length > 0) {
+      await supabase.from('exam_oral_questions').insert(
+        oqs.map((q, i) => ({ exam_id: examId, question: q.question, sample_answer: q.sample_answer || null, order_index: i }))
+      );
+    }
+    showMsg('✅ Prüfung aktualisiert!');
     await loadExams();
     setView('list');
     setSaving(false);
   }
 
-  // ─── SESSION ───────────────────────────────────────────────────────────────
+  // ─── SESSION ──────────────────────────────────────────────────────────────
   async function createSession() {
     if (!candidateId || !selectedExam) return;
     setSaving(true);
@@ -179,7 +218,7 @@ const visibleExams = exams.filter(e =>
       exam_id: selectedExam.id, candidate_id: candidateId, examiner_id: myId,
     }).select().single();
     if (session) {
-      const link = `${window.location.origin}/pruefung/${session.token}`;
+      const link = `${window.location.origin}/pruefung/${(session as any).token}`;
       await navigator.clipboard.writeText(link);
       showMsg('✅ Link kopiert! Schick ihn dem Kandidaten per Discord DM.');
       await loadDetail(selectedExam);
@@ -202,7 +241,7 @@ const visibleExams = exams.filter(e =>
     showMsg('✅ Prüfung gelöscht.');
   }
 
-  // ─── MÜNDLICH ──────────────────────────────────────────────────────────────
+  // ─── MÜNDLICH ─────────────────────────────────────────────────────────────
   function startOral(session: any) {
     setSelectedSession(session);
     setOralResults(session.oral_results || {});
@@ -211,18 +250,11 @@ const visibleExams = exams.filter(e =>
     setView('oral');
   }
 
-  function rateOral(passed: boolean) {
-    const q = oralQs[oralIndex];
-    setOralResults(p => ({ ...p, [q.id]: { passed, note: p[q.id]?.note || '' } }));
-  }
-
   async function finishOral() {
     if (!selectedSession) return;
     setSaving(true);
     await supabase.from('exam_sessions').update({
-      oral_results: oralResults,
-      oral_completed_at: new Date().toISOString(),
-      status: 'oral_done',
+      oral_results: oralResults, oral_completed_at: new Date().toISOString(), status: 'oral_done',
     }).eq('id', selectedSession.id);
     showMsg('✅ Mündlicher Teil abgeschlossen!');
     await loadDetail(selectedExam);
@@ -230,7 +262,7 @@ const visibleExams = exams.filter(e =>
     setSaving(false);
   }
 
-  // ─── PRAKTISCH ─────────────────────────────────────────────────────────────
+  // ─── PRAKTISCH ────────────────────────────────────────────────────────────
   function startPractical(session: any) {
     setSelectedSession(session);
     setPracticalPassed(session.practical_passed ?? null);
@@ -246,12 +278,9 @@ const visibleExams = exams.filter(e =>
     const oralOk = oralVals.length > 0 ? oralVals.filter(r => r.passed).length / oralVals.length >= 0.7 : true;
     const overallOk = oralOk && practicalPassed;
     await supabase.from('exam_sessions').update({
-      practical_passed: practicalPassed,
-      practical_notes: practicalNotes || null,
-      practical_completed_at: new Date().toISOString(),
-      overall_notes: overallNotes || null,
-      status: overallOk ? 'passed' : 'failed',
-      completed_at: new Date().toISOString(),
+      practical_passed: practicalPassed, practical_notes: practicalNotes || null,
+      practical_completed_at: new Date().toISOString(), overall_notes: overallNotes || null,
+      status: overallOk ? 'passed' : 'failed', completed_at: new Date().toISOString(),
     }).eq('id', selectedSession.id);
     showMsg(`✅ Prüfung abgeschlossen – ${overallOk ? 'BESTANDEN' : 'NICHT BESTANDEN'}!`);
     await loadDetail(selectedExam);
@@ -260,13 +289,87 @@ const visibleExams = exams.filter(e =>
   }
 
   if (loading) return <div className="text-gray-400 text-center py-12">Lade...</div>;
-  if (!canManage) return (
-  <div className="text-red-400 text-center py-12">
-    Nur Junior Management+ kann Prüfungen verwalten.
-  </div>
-);
+  if (!canManage) return <div className="text-red-400 text-center py-12">Nur Junior Management+ kann Prüfungen verwalten.</div>;
 
-  // ─── FORMULAR (CREATE & EDIT) ──────────────────────────────────────────────
+  // ─── FRAGE EDITOR COMPONENT ───────────────────────────────────────────────
+  function QuestionEditor({ q, i }: { q: WrittenQuestion; i: number }) {
+    return (
+      <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-4 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className={`text-xs font-bold px-2 py-0.5 rounded border ${
+              q.type === 'open' ? 'text-blue-400 bg-blue-500/10 border-blue-500/30' :
+              q.type === 'multiple_choice' ? 'text-purple-400 bg-purple-500/10 border-purple-500/30' :
+              'text-green-400 bg-green-500/10 border-green-500/30'
+            }`}>
+              {q.type === 'open' ? '📝 Offen' : q.type === 'multiple_choice' ? '🔘 Multiple Choice' : '✅ Wahr/Falsch'}
+            </span>
+            <span className="text-gray-500 text-xs">Frage {i + 1}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <select value={q.type} onChange={e => {
+              const t = e.target.value as QuestionType;
+              updateWrittenQ(q.id, 'type', t);
+              if (t === 'multiple_choice') updateWrittenQ(q.id, 'options', ['', '', '', '']);
+              if (t === 'true_false') { updateWrittenQ(q.id, 'options', []); updateWrittenQ(q.id, 'correct_answer', 'true'); }
+              if (t === 'open') { updateWrittenQ(q.id, 'options', []); updateWrittenQ(q.id, 'correct_answer', ''); }
+            }}
+              className="bg-[#0f1117] border border-white/10 rounded-lg px-2 py-1 text-white text-xs focus:outline-none">
+              <option value="open">📝 Offene Frage</option>
+              <option value="multiple_choice">🔘 Multiple Choice</option>
+              <option value="true_false">✅ Wahr/Falsch</option>
+            </select>
+            <button onClick={() => setWrittenForm(p => p.filter(fq => fq.id !== q.id))}
+              className="text-gray-500 hover:text-red-400 text-xs transition">✕</button>
+          </div>
+        </div>
+
+        <input value={q.section || ''} onChange={e => updateWrittenQ(q.id, 'section', e.target.value)}
+          placeholder="Abschnitt (z.B. Teil A – Multiple Choice) optional..."
+          className="w-full bg-[#0f1117] border border-white/5 rounded-lg px-3 py-1.5 text-gray-400 placeholder-gray-600 text-xs focus:outline-none focus:border-white/20" />
+
+        <textarea value={q.question} onChange={e => updateWrittenQ(q.id, 'question', e.target.value)}
+          placeholder="Frage eingeben..." rows={2}
+          className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
+
+        {q.type === 'multiple_choice' && (
+          <div className="space-y-2">
+            <p className="text-gray-400 text-xs">Antwortoptionen (richtige markieren):</p>
+            {q.options.map((opt, oi) => (
+              <div key={oi} className="flex items-center gap-2">
+                <button onClick={() => updateWrittenQ(q.id, 'correct_answer', String(oi))}
+                  className={`w-6 h-6 rounded-full border-2 flex-shrink-0 transition ${q.correct_answer === String(oi) ? 'bg-green-500 border-green-500' : 'border-gray-600 hover:border-green-500'}`}>
+                  {q.correct_answer === String(oi) && <span className="text-white text-xs flex items-center justify-center w-full">✓</span>}
+                </button>
+                <span className="text-gray-400 text-xs w-5">{['A', 'B', 'C', 'D'][oi]})</span>
+                <input value={opt} onChange={e => updateOption(q.id, oi, e.target.value)}
+                  placeholder={`Option ${['A', 'B', 'C', 'D'][oi]}...`}
+                  className="flex-1 bg-[#0f1117] border border-white/10 rounded-lg px-3 py-1.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {q.type === 'true_false' && (
+          <div>
+            <p className="text-gray-400 text-xs mb-2">Richtige Antwort:</p>
+            <div className="flex gap-2">
+              <button onClick={() => updateWrittenQ(q.id, 'correct_answer', 'true')}
+                className={`flex-1 py-2 rounded-lg border text-sm font-medium transition ${q.correct_answer === 'true' ? 'bg-green-500/20 border-green-500/50 text-green-400' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-green-500/10'}`}>
+                ✅ Wahr
+              </button>
+              <button onClick={() => updateWrittenQ(q.id, 'correct_answer', 'false')}
+                className={`flex-1 py-2 rounded-lg border text-sm font-medium transition ${q.correct_answer === 'false' ? 'bg-red-500/20 border-red-500/50 text-red-400' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-red-500/10'}`}>
+                ❌ Falsch
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ─── CREATE / EDIT VIEW ───────────────────────────────────────────────────
   if (view === 'create' || view === 'edit') {
     const isEdit = view === 'edit';
     return (
@@ -304,23 +407,23 @@ const visibleExams = exams.filter(e =>
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-white font-medium">📝 Schriftliche Fragen</h3>
-              <p className="text-gray-400 text-xs">Kandidat beantwortet über den Link</p>
+              <p className="text-gray-400 text-xs">Kandidat beantwortet über den Link · {writtenForm.length} Fragen</p>
             </div>
-            <button onClick={() => setWrittenForm(p => [...p, { id: Date.now(), question: '' }])}
-              className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition">+ Frage</button>
+            <div className="flex gap-2">
+              <button onClick={() => setWrittenForm(p => [...p, newQuestion('open')])}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg transition">+ Offen</button>
+              <button onClick={() => setWrittenForm(p => [...p, newQuestion('multiple_choice')])}
+                className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg transition">+ MC</button>
+              <button onClick={() => setWrittenForm(p => [...p, newQuestion('true_false')])}
+                className="bg-green-700 hover:bg-green-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg transition">+ W/F</button>
+            </div>
           </div>
-          {writtenForm.map((q, i) => (
-            <div key={q.id} className="bg-[#1a1d27] border border-white/10 rounded-xl p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-blue-400 text-xs font-medium">Frage {i + 1}</span>
-                <button onClick={() => setWrittenForm(p => p.filter(fq => fq.id !== q.id))} className="text-gray-500 hover:text-red-400 text-xs transition">Entfernen</button>
-              </div>
-              <textarea value={q.question} onChange={e => setWrittenForm(p => p.map(fq => fq.id === q.id ? { ...fq, question: e.target.value } : fq))}
-                placeholder="Schriftliche Frage..." rows={2}
-                className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
+          {writtenForm.map((q, i) => <QuestionEditor key={q.id} q={q} i={i} />)}
+          {writtenForm.length === 0 && (
+            <div className="text-center py-5 bg-[#1a1d27] border border-dashed border-white/10 rounded-xl">
+              <p className="text-gray-500 text-sm">Fragen hinzufügen mit den Buttons oben</p>
             </div>
-          ))}
-          {writtenForm.length === 0 && <div className="text-center py-5 bg-[#1a1d27] border border-dashed border-white/10 rounded-xl"><p className="text-gray-500 text-sm">Noch keine schriftlichen Fragen</p></div>}
+          )}
         </div>
 
         {/* Mündliche Fragen */}
@@ -331,23 +434,27 @@ const visibleExams = exams.filter(e =>
               <p className="text-gray-400 text-xs">Nur der Prüfer sieht diese + Musterlösungen</p>
             </div>
             <button onClick={() => setOralForm(p => [...p, { id: Date.now(), question: '', sample_answer: '' }])}
-              className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition">+ Frage</button>
+              className="bg-orange-600 hover:bg-orange-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition">+ Frage</button>
           </div>
           {oralForm.map((q, i) => (
             <div key={q.id} className="bg-[#1a1d27] border border-white/10 rounded-xl p-4 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-purple-400 text-xs font-medium">Frage {i + 1}</span>
-                <button onClick={() => setOralForm(p => p.filter(fq => fq.id !== q.id))} className="text-gray-500 hover:text-red-400 text-xs transition">Entfernen</button>
+                <span className="text-orange-400 text-xs font-medium">Mündlich {i + 1}</span>
+                <button onClick={() => setOralForm(p => p.filter(fq => fq.id !== q.id))} className="text-gray-500 hover:text-red-400 text-xs transition">✕</button>
               </div>
               <textarea value={q.question} onChange={e => setOralForm(p => p.map(fq => fq.id === q.id ? { ...fq, question: e.target.value } : fq))}
                 placeholder="Mündliche Frage..." rows={2}
-                className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
+                className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-orange-500 resize-none" />
               <textarea value={q.sample_answer} onChange={e => setOralForm(p => p.map(fq => fq.id === q.id ? { ...fq, sample_answer: e.target.value } : fq))}
-                placeholder="Musterlösung (nur für den Prüfer sichtbar)..." rows={2}
+                placeholder="Musterlösung (nur Prüfer sieht das)..." rows={2}
                 className="w-full bg-[#0f1117] border border-yellow-500/20 rounded-lg px-3 py-2 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-yellow-500 resize-none" />
             </div>
           ))}
-          {oralForm.length === 0 && <div className="text-center py-5 bg-[#1a1d27] border border-dashed border-white/10 rounded-xl"><p className="text-gray-500 text-sm">Noch keine mündlichen Fragen</p></div>}
+          {oralForm.length === 0 && (
+            <div className="text-center py-5 bg-[#1a1d27] border border-dashed border-white/10 rounded-xl">
+              <p className="text-gray-500 text-sm">Noch keine mündlichen Fragen</p>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-2">
@@ -361,7 +468,7 @@ const visibleExams = exams.filter(e =>
     );
   }
 
-  // ─── MÜNDLICHE PRÜFUNG VIEW ───────────────────────────────────────────────
+  // ─── MÜNDLICH VIEW ────────────────────────────────────────────────────────
   if (view === 'oral' && selectedSession) {
     const q = oralQs[oralIndex];
     const currentResult = oralResults[q?.id];
@@ -378,53 +485,50 @@ const visibleExams = exams.filter(e =>
           </div>
         </div>
         {msg && <div className={`rounded-xl px-4 py-3 text-sm font-medium border ${msg.ok ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>{msg.text}</div>}
-
         <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-gray-400 text-xs">Fortschritt</span>
             <span className="text-white text-sm font-bold">{oralIndex + 1} / {oralQs.length}</span>
           </div>
           <div className="w-full bg-white/10 rounded-full h-2 mb-3">
-            <div className="bg-blue-500 h-2 rounded-full transition-all" style={{ width: `${((oralIndex + 1) / oralQs.length) * 100}%` }} />
+            <div className="bg-orange-500 h-2 rounded-full transition-all" style={{ width: `${((oralIndex + 1) / oralQs.length) * 100}%` }} />
           </div>
           <div className="flex gap-1 flex-wrap">
             {oralQs.map((_, i) => {
               const r = oralResults[oralQs[i]?.id];
               return (
                 <button key={i} onClick={() => { setOralIndex(i); setShowAnswer(false); }}
-                  className={`w-8 h-8 rounded text-xs font-bold transition ${i === oralIndex ? 'bg-blue-600 text-white' : r?.passed === true ? 'bg-green-500/30 text-green-400 border border-green-500/40' : r?.passed === false ? 'bg-red-500/30 text-red-400 border border-red-500/40' : 'bg-white/5 text-gray-500'}`}>
+                  className={`w-8 h-8 rounded text-xs font-bold transition ${i === oralIndex ? 'bg-orange-600 text-white' : r?.passed === true ? 'bg-green-500/30 text-green-400 border border-green-500/40' : r?.passed === false ? 'bg-red-500/30 text-red-400 border border-red-500/40' : 'bg-white/5 text-gray-500'}`}>
                   {i + 1}
                 </button>
               );
             })}
           </div>
         </div>
-
         {q && (
           <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-6 space-y-4">
-            <span className="text-blue-400 text-xs font-bold bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 rounded">Frage {oralIndex + 1}</span>
             <p className="text-white text-lg font-medium leading-relaxed">{q.question}</p>
             {q.sample_answer && (
               <div>
                 <button onClick={() => setShowAnswer(p => !p)}
                   className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition ${showAnswer ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10'}`}>
-                  {showAnswer ? '🙈 Ausblenden' : '👁️ Musterlösung anzeigen'}
+                  {showAnswer ? '🙈 Ausblenden' : '👁️ Musterlösung'}
                 </button>
                 {showAnswer && (
                   <div className="mt-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4">
                     <p className="text-yellow-400 text-xs font-bold mb-1">📋 Musterlösung</p>
-                    <p className="text-white text-sm leading-relaxed whitespace-pre-wrap">{q.sample_answer}</p>
+                    <p className="text-white text-sm whitespace-pre-wrap">{q.sample_answer}</p>
                   </div>
                 )}
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
-              <button onClick={() => rateOral(true)}
-                className={`py-4 rounded-xl border text-sm font-bold transition flex items-center justify-center gap-2 ${currentResult?.passed === true ? 'bg-green-500/20 border-green-500/50 text-green-400' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-green-500/10 hover:border-green-500/30 hover:text-green-400'}`}>
+              <button onClick={() => setOralResults(p => ({ ...p, [q.id]: { passed: true, note: p[q.id]?.note || '' } }))}
+                className={`py-4 rounded-xl border text-sm font-bold transition ${currentResult?.passed === true ? 'bg-green-500/20 border-green-500/50 text-green-400' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-green-500/10 hover:border-green-500/30 hover:text-green-400'}`}>
                 ✅ Bestanden
               </button>
-              <button onClick={() => rateOral(false)}
-                className={`py-4 rounded-xl border text-sm font-bold transition flex items-center justify-center gap-2 ${currentResult?.passed === false ? 'bg-red-500/20 border-red-500/50 text-red-400' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-400'}`}>
+              <button onClick={() => setOralResults(p => ({ ...p, [q.id]: { passed: false, note: p[q.id]?.note || '' } }))}
+                className={`py-4 rounded-xl border text-sm font-bold transition ${currentResult?.passed === false ? 'bg-red-500/20 border-red-500/50 text-red-400' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-400'}`}>
                 ❌ Nicht bestanden
               </button>
             </div>
@@ -434,13 +538,12 @@ const visibleExams = exams.filter(e =>
               className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
           </div>
         )}
-
         <div className="flex gap-3">
           <button onClick={() => { setOralIndex(p => Math.max(p - 1, 0)); setShowAnswer(false); }} disabled={oralIndex === 0}
             className="bg-white/5 hover:bg-white/10 disabled:opacity-30 text-gray-300 px-5 py-2.5 rounded-lg text-sm transition">← Zurück</button>
           {oralIndex < oralQs.length - 1 ? (
             <button onClick={() => { setOralIndex(p => p + 1); setShowAnswer(false); }}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm transition">Weiter →</button>
+              className="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-medium py-2.5 rounded-lg text-sm transition">Weiter →</button>
           ) : (
             <button onClick={finishOral} disabled={saving || answered === 0}
               className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-bold py-2.5 rounded-lg text-sm transition">
@@ -452,7 +555,7 @@ const visibleExams = exams.filter(e =>
     );
   }
 
-  // ─── PRAKTISCHER TEIL VIEW ────────────────────────────────────────────────
+  // ─── PRAKTISCH VIEW ───────────────────────────────────────────────────────
   if (view === 'practical' && selectedSession) {
     return (
       <div className="max-w-2xl space-y-4">
@@ -478,18 +581,12 @@ const visibleExams = exams.filter(e =>
               <span className="text-3xl">❌</span>Nicht bestanden
             </button>
           </div>
-          <div>
-            <label className="text-gray-400 text-xs mb-1 block">Notizen zum praktischen Teil</label>
-            <textarea value={practicalNotes} onChange={e => setPracticalNotes(e.target.value)}
-              placeholder="Was wurde getestet? Wie hat sich der Kandidat geschlagen?" rows={3}
-              className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
-          </div>
-          <div>
-            <label className="text-gray-400 text-xs mb-1 block">Gesamteindruck</label>
-            <textarea value={overallNotes} onChange={e => setOverallNotes(e.target.value)}
-              placeholder="Allgemeiner Eindruck des Kandidaten..." rows={3}
-              className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
-          </div>
+          <textarea value={practicalNotes} onChange={e => setPracticalNotes(e.target.value)}
+            placeholder="Notizen zum praktischen Teil..." rows={3}
+            className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
+          <textarea value={overallNotes} onChange={e => setOverallNotes(e.target.value)}
+            placeholder="Gesamteindruck..." rows={3}
+            className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
           <button onClick={finishPractical} disabled={saving || practicalPassed === null}
             className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-bold py-3 rounded-lg text-sm transition">
             {saving ? 'Auswerten...' : '🎓 Prüfung abschließen & Gesamtergebnis speichern'}
@@ -502,8 +599,6 @@ const visibleExams = exams.filter(e =>
   // ─── DETAIL VIEW ──────────────────────────────────────────────────────────
   if (view === 'detail' && selectedExam) {
     const dept = DEPARTMENTS.find(d => d.key === selectedExam.department);
-    const passed = sessions.filter(s => s.status === 'passed').length;
-    const failed = sessions.filter(s => s.status === 'failed').length;
     return (
       <div className="max-w-3xl space-y-5">
         <div className="flex items-center justify-between">
@@ -521,33 +616,26 @@ const visibleExams = exams.filter(e =>
             ✏️ Bearbeiten
           </button>
         </div>
-
         {msg && <div className={`rounded-xl px-4 py-3 text-sm font-medium border ${msg.ok ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>{msg.text}</div>}
-
         <div className="grid grid-cols-3 gap-3">
-          <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-4 text-center">
-            <p className="text-2xl font-bold text-white">{sessions.length}</p>
-            <p className="text-gray-400 text-xs mt-1">Gesamt</p>
-          </div>
-          <div className="bg-[#1a1d27] border border-green-500/20 rounded-xl p-4 text-center">
-            <p className="text-2xl font-bold text-green-400">{passed}</p>
-            <p className="text-gray-400 text-xs mt-1">Bestanden</p>
-          </div>
-          <div className="bg-[#1a1d27] border border-red-500/20 rounded-xl p-4 text-center">
-            <p className="text-2xl font-bold text-red-400">{failed}</p>
-            <p className="text-gray-400 text-xs mt-1">Nicht bestanden</p>
-          </div>
+          {[
+            { label: 'Gesamt', val: sessions.length, color: 'border-white/10', text: 'text-white' },
+            { label: 'Bestanden', val: sessions.filter(s => s.status === 'passed').length, color: 'border-green-500/20', text: 'text-green-400' },
+            { label: 'Nicht bestanden', val: sessions.filter(s => s.status === 'failed').length, color: 'border-red-500/20', text: 'text-red-400' },
+          ].map(s => (
+            <div key={s.label} className={`bg-[#1a1d27] border ${s.color} rounded-xl p-4 text-center`}>
+              <p className={`text-2xl font-bold ${s.text}`}>{s.val}</p>
+              <p className="text-gray-400 text-xs mt-1">{s.label}</p>
+            </div>
+          ))}
         </div>
-
         <div className="bg-[#1a1d27] border border-blue-500/20 rounded-xl p-5">
-          <h3 className="text-white font-medium mb-3">🚀 Prüfung für Kandidaten starten</h3>
+          <h3 className="text-white font-medium mb-3">🚀 Prüfung starten</h3>
           <div className="flex gap-3">
             <select value={candidateId} onChange={e => setCandidateId(e.target.value)}
               className="flex-1 bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500">
               <option value="">Kandidat auswählen...</option>
-              {members.filter(m => m.id !== myId).map(m => (
-                <option key={m.id} value={m.id}>{m.username}</option>
-              ))}
+              {members.filter(m => m.id !== myId).map(m => <option key={m.id} value={m.id}>{m.username}</option>)}
             </select>
             <button onClick={createSession} disabled={!candidateId || saving}
               className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-medium px-5 py-2.5 rounded-lg text-sm transition">
@@ -556,7 +644,6 @@ const visibleExams = exams.filter(e =>
           </div>
           <p className="text-gray-500 text-xs mt-2">Link wird automatisch kopiert.</p>
         </div>
-
         {sessions.length > 0 && (
           <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5">
             <h3 className="text-white font-medium mb-3">📊 Prüflinge</h3>
@@ -581,29 +668,25 @@ const visibleExams = exams.filter(e =>
                       <div className="flex items-center gap-2">
                         <span className={`text-xs px-2 py-1 rounded border font-medium ${st.color}`}>{st.label}</span>
                         <button onClick={() => deleteSession(s.id)}
-                          className="text-xs px-2 py-1 rounded border bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20 transition">
-                          🗑️
-                        </button>
+                          className="text-xs px-2 py-1 rounded border bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20 transition">🗑️</button>
                       </div>
                     </div>
-
-                    {/* Aktions-Buttons */}
                     <div className="flex gap-2 flex-wrap">
                       {s.status !== 'written_pending' && (
                         <button onClick={() => setShowAnswersFor(showingAnswers ? null : s.id)}
                           className={`text-xs px-3 py-1.5 rounded-lg border transition ${showingAnswers ? 'bg-blue-500/20 text-blue-300 border-blue-500/50' : 'bg-blue-500/10 text-blue-400 border-blue-500/30 hover:bg-blue-500/20'}`}>
-                          📄 {showingAnswers ? 'Antworten ausblenden' : 'Schriftliche Antworten'}
+                          📄 {showingAnswers ? 'Ausblenden' : 'Schriftliche Antworten'}
                         </button>
                       )}
                       {s.status === 'written_submitted' && (
                         <button onClick={() => startOral(s)}
-                          className="text-xs px-3 py-1.5 rounded-lg border bg-purple-500/10 text-purple-400 border-purple-500/30 hover:bg-purple-500/20 transition">
+                          className="text-xs px-3 py-1.5 rounded-lg border bg-orange-500/10 text-orange-400 border-orange-500/30 hover:bg-orange-500/20 transition">
                           🎤 Mündlichen Teil starten
                         </button>
                       )}
                       {s.status === 'oral_done' && (
                         <button onClick={() => startPractical(s)}
-                          className="text-xs px-3 py-1.5 rounded-lg border bg-orange-500/10 text-orange-400 border-orange-500/30 hover:bg-orange-500/20 transition">
+                          className="text-xs px-3 py-1.5 rounded-lg border bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500/20 transition">
                           🔧 Praktischen Teil starten
                         </button>
                       )}
@@ -612,23 +695,67 @@ const visibleExams = exams.filter(e =>
                         <span className="text-xs text-gray-400 self-center">Praktisch: {s.practical_passed ? '✅' : '❌'}</span>
                       )}
                     </div>
-
-                    {/* Schriftliche Antworten */}
                     {showingAnswers && (
                       <div className="mt-4 border-t border-white/10 pt-4 space-y-3">
                         <p className="text-white text-xs font-bold">📝 Schriftliche Antworten</p>
-                        {writtenQs.length === 0 && <p className="text-gray-500 text-xs">Keine schriftlichen Fragen vorhanden.</p>}
-                        {writtenQs.map((q, qi) => (
-                          <div key={q.id} className="bg-[#1a1d27] rounded-lg p-4">
-                            <p className="text-gray-400 text-xs font-medium mb-2">Frage {qi + 1}: {q.question}</p>
-                            <p className="text-white text-sm leading-relaxed whitespace-pre-wrap">
-                              {s.written_answers?.[q.id]
-                                ? s.written_answers[q.id]
-                                : <span className="text-gray-500 italic">Keine Antwort gegeben</span>
-                              }
-                            </p>
-                          </div>
-                        ))}
+                        {writtenQs.map((q, qi) => {
+                          const answer = s.written_answers?.[q.id];
+                          const isCorrect = q.type === 'multiple_choice'
+                            ? answer === q.correct_answer
+                            : q.type === 'true_false'
+                            ? answer === q.correct_answer
+                            : null;
+                          return (
+                            <div key={q.id} className={`rounded-lg p-4 border ${isCorrect === true ? 'bg-green-500/5 border-green-500/20' : isCorrect === false ? 'bg-red-500/5 border-red-500/20' : 'bg-[#1a1d27] border-white/5'}`}>
+                              <div className="flex items-start justify-between gap-2 mb-2">
+                                <p className="text-gray-400 text-xs font-medium">
+                                  {q.section && <span className="text-blue-400 mr-1">[{q.section}]</span>}
+                                  Frage {qi + 1}: {q.question}
+                                </p>
+                                {isCorrect !== null && (
+                                  <span className={`text-xs flex-shrink-0 ${isCorrect ? 'text-green-400' : 'text-red-400'}`}>
+                                    {isCorrect ? '✓ Richtig' : '✗ Falsch'}
+                                  </span>
+                                )}
+                              </div>
+                              {q.type === 'multiple_choice' && (
+                                <div className="space-y-1">
+                                  {q.options?.map((opt: string, oi: number) => (
+                                    <div key={oi} className={`text-xs px-2 py-1 rounded flex items-center gap-2 ${
+                                      answer === String(oi) && q.correct_answer === String(oi) ? 'bg-green-500/20 text-green-400' :
+                                      answer === String(oi) ? 'bg-red-500/20 text-red-400' :
+                                      q.correct_answer === String(oi) ? 'bg-green-500/10 text-green-500' :
+                                      'text-gray-500'}`}>
+                                      <span>{['A', 'B', 'C', 'D'][oi]})</span>
+                                      <span>{opt}</span>
+                                      {answer === String(oi) && <span className="ml-auto">{q.correct_answer === String(oi) ? '✓' : '✗'}</span>}
+                                      {answer !== String(oi) && q.correct_answer === String(oi) && <span className="ml-auto text-green-500">← Richtig</span>}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {q.type === 'true_false' && (
+                                <div className="flex gap-2">
+                                  {['true', 'false'].map(v => (
+                                    <span key={v} className={`text-xs px-3 py-1 rounded border ${
+                                      answer === v && q.correct_answer === v ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                                      answer === v ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                                      q.correct_answer === v ? 'bg-green-500/10 text-green-500 border-green-500/20' :
+                                      'text-gray-600 border-white/5'}`}>
+                                      {v === 'true' ? '✅ Wahr' : '❌ Falsch'}
+                                      {answer === v && ' (gewählt)'}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {q.type === 'open' && (
+                                <p className="text-white text-sm whitespace-pre-wrap">
+                                  {answer || <span className="text-gray-500 italic">Keine Antwort</span>}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -655,9 +782,7 @@ const visibleExams = exams.filter(e =>
           Neue Prüfung
         </button>
       </div>
-
       {msg && <div className={`rounded-xl px-4 py-3 text-sm font-medium border ${msg.ok ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>{msg.text}</div>}
-
       {DEPARTMENTS.map(dept => {
         const deptExams = visibleExams.filter(e => e.department === dept.key);
         if (deptExams.length === 0) return null;
@@ -674,18 +799,9 @@ const visibleExams = exams.filter(e =>
                       <p className="text-gray-500 text-xs mt-1">von {exam.creator?.username} · {new Date(exam.created_at).toLocaleDateString('de-DE')}</p>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => loadDetail(exam)}
-                        className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
-                        Öffnen
-                      </button>
-                      <button onClick={() => openEdit(exam)}
-                        className="bg-white/5 hover:bg-white/10 text-gray-400 border border-white/10 text-xs font-medium px-3 py-1.5 rounded-lg transition">
-                        ✏️
-                      </button>
-                      <button onClick={() => deleteExam(exam.id)}
-                        className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
-                        🗑️
-                      </button>
+                      <button onClick={() => loadDetail(exam)} className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">Öffnen</button>
+                      <button onClick={() => openEdit(exam)} className="bg-white/5 hover:bg-white/10 text-gray-400 border border-white/10 text-xs font-medium px-3 py-1.5 rounded-lg transition">✏️</button>
+                      <button onClick={() => deleteExam(exam.id)} className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">🗑️</button>
                     </div>
                   </div>
                 </div>
@@ -694,7 +810,6 @@ const visibleExams = exams.filter(e =>
           </div>
         );
       })}
-
       {visibleExams.length === 0 && (
         <div className="text-center py-12 bg-[#1a1d27] border border-white/10 rounded-xl">
           <p className="text-4xl mb-3">📋</p>
