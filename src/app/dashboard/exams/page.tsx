@@ -101,12 +101,13 @@ export default function ExamsPage() {
   useEffect(() => { load(); }, []);
 
   // Junior Management+ darf verwalten
-  const canManage = myRole ? ROLE_HIERARCHY[myRole] >= 80 : false;
+const canManage = myRole ? ROLE_HIERARCHY[myRole] >= 80 : false;
 
-  // Top Management sieht alles, andere nur ihre Abteilung
-  const visibleExams = exams.filter(e =>
-    myRole === 'top_management' || myDepts.includes(e.department)
-  );
+const visibleExams = exams.filter(e =>
+  myRole === 'top_management' ||
+  myRole === 'junior_management' && myDepts.includes(e.department) ||
+  myRole === 'management' && myDepts.includes(e.department)
+);
 
   // ─── CREATE / EDIT ─────────────────────────────────────────────────────────
   function openCreate() {
@@ -259,7 +260,11 @@ export default function ExamsPage() {
   }
 
   if (loading) return <div className="text-gray-400 text-center py-12">Lade...</div>;
-  if (!canManage) return <div className="text-red-400 text-center py-12">Nur Junior Management+ kann Prüfungen verwalten.</div>;
+  if (!canManage) return (
+  <div className="text-red-400 text-center py-12">
+    Nur Junior Management+ kann Prüfungen verwalten.
+  </div>
+);
 
   // ─── FORMULAR (CREATE & EDIT) ──────────────────────────────────────────────
   if (view === 'create' || view === 'edit') {
