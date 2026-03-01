@@ -447,32 +447,7 @@ async function saveExam(isEdit: boolean) {
           </div>
         </div>
         <MsgBar />
-
-        {/* Neue Anfrage stellen (nicht Top Management) */}
-        {!isTopMgmt && (
-          <div className="bg-[#1a1d27] border border-blue-500/20 rounded-xl p-5 space-y-3">
-            <h3 className="text-white font-medium">📋 Prüfung anordnen</h3>
-            <p className="text-gray-400 text-xs">Stelle eine Anfrage an Top Management um eine Prüfung für einen Kandidaten zu genehmigen.</p>
-            <select value={requestExamId} onChange={e => setRequestExamId(e.target.value)}
-              className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500">
-              <option value="">Prüfung auswählen...</option>
-              {visibleExams.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
-            </select>
-            <select value={requestCandidateId} onChange={e => setRequestCandidateId(e.target.value)}
-              className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500">
-              <option value="">Kandidat auswählen...</option>
-              {members.filter(m => m.id !== myId).map(m => <option key={m.id} value={m.id}>{m.username}</option>)}
-            </select>
-            <textarea value={requestNotes} onChange={e => setRequestNotes(e.target.value)}
-              placeholder="Begründung / Notizen (optional)..." rows={2}
-              className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
-            <button onClick={submitRequest} disabled={saving || !requestExamId || !requestCandidateId}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-medium py-2.5 rounded-lg text-sm transition">
-              📤 Anfrage senden
-            </button>
-          </div>
-        )}
-
+        
         {/* Ausstehende Anfragen (Top Management) */}
         {isTopMgmt && pending.length > 0 && (
           <div className="bg-[#1a1d27] border border-yellow-500/20 rounded-xl p-5">
@@ -896,18 +871,15 @@ async function saveExam(isEdit: boolean) {
           <p className="text-gray-400 text-sm mt-1">Schriftlich · Mündlich · Praktisch</p>
         </div>
         <div className="flex gap-2">
+         {isTopMgmt && (
           <button onClick={() => { loadRequests(); setView('requests'); }}
-            className={`font-medium px-4 py-2 rounded-lg transition text-sm flex items-center gap-2 border ${isTopMgmt && requests.filter(r => r.status === 'pending').length > 0 ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/20' : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10'}`}>
-            📋 Anordnungen
-            {isTopMgmt && requests.filter(r => r.status === 'pending').length > 0 && (
-              <span className="bg-yellow-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full">{requests.filter(r => r.status === 'pending').length}</span>
-            )}
-          </button>
-          <button onClick={openCreate}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition text-sm flex items-center gap-2">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-            Neue Prüfung
-          </button>
+            className={`font-medium px-4 py-2 rounded-lg transition text-sm flex items-center gap-2 border ${requests.filter(r => r.status === 'pending').length > 0 ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/20' : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10'}`}>
+          📋 Anordnungen
+    {requests.filter(r => r.status === 'pending').length > 0 && (
+      <span className="bg-yellow-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full">{requests.filter(r => r.status === 'pending').length}</span>
+    )}
+  </button>
+)}
         </div>
       </div>
       <MsgBar />
