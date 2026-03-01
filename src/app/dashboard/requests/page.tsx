@@ -258,6 +258,15 @@ export default function RequestsPage() {
     await loadRequests();
     setSaving(false);
   }
+  async function deleteRequest(id: string) {
+    if (!confirm('Antrag wirklich löschen?')) return;
+    setSaving(true);
+    await supabase.from('requests').delete().eq('id', id);
+    setRequests(p => p.filter(r => r.id !== id));
+    setSelectedRequest(null);
+    showMsg('✅ Antrag gelöscht.');
+    setSaving(false);
+  }
 
   if (loading) return <div className="text-gray-400 text-center py-12">Lade...</div>;
 
@@ -570,6 +579,15 @@ export default function RequestsPage() {
                         {r.category === 'pruefung' ? '📨 Weiterleiten' : '✅ Genehmigen'}
                       </button>
                     </div>
+                  </div>
+                )}
+                {/* TOP MANAGEMENT DELETE */}
+                {isTopMgmt && (r.status === 'approved' || r.status === 'rejected') && (
+                  <div className="border-t border-white/10 pt-4">
+                    <button onClick={() => deleteRequest(r.id)} disabled={saving}
+                      className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 font-medium py-2.5 rounded-lg text-sm transition disabled:opacity-40">
+                      🗑️ Antrag löschen
+                    </button>
                   </div>
                 )}
 
