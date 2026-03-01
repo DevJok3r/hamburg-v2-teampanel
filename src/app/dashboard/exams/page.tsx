@@ -254,51 +254,83 @@ export default function ExamsPage() {
     setView('edit');
   }
 
-async function saveExam(isEdit: boolean) {
-    if (!form.title.trim()) return;
-    setSaving(true);
+  async function saveExam(isEdit: boolean) {
+  if (!form.title.trim()) return;
+  setSaving(true);
 
-    let examId: string;
+  let examId: string;
 
-    if (isEdit && selectedExam) {
-      examId = selectedExam.id;
-      const { error: updateErr } = await supabase.from('exams').update({
+  if (isEdit && selectedExam) {
+    examId = selectedExam.id;
+
+    const { error: updateErr } = await supabase
+      .from('exams')
+      .update({
         title: form.title,
         description: form.description || null,
         department: form.department,
-      }).eq('id', examId);
-      if (updateErr) { showMsg('❌ Fehler: ' + updateErr.message, false); setSaving(false); return; }
-      await supabase.from('exam_written_questions').delete().eq('exam_id', examId);
-      await supabase.from('exam_oral_questions').delete().eq('exam_id', examId);
-    } else {
-      const { data: newExam, error: createErr } = await supabase
-        .from('exams')
-        .insert({ title: form.title, description: form.description || null, department: form.department, created_by: myId })
-        .select('id')
-        .single();
-      if (createErr || !newExam) { showMsg('❌ Fehler: ' + (createErr?.message || 'Unbekannt'), false); setSaving(false); return; }
-      examId = newExam.id;
+      })
+      .eq('id', examId);
+
+    if (updateErr) {
+      showMsg('❌ ' + updateErr.message, false);
+      setSaving(false);
+      return;
     }
 
-    const wqs = writtenForm.filter(q => q.question.trim());
-    if (wqs.length > 0) {
-      const { error: wErr } = await supabase.from('exam_written_questions').insert(
+    await supabase.from('exam_written_questions').delete().eq('exam_id', examId);
+    await supabase.from('exam_oral_questions').delete().eq('exam_id', examId);
+  } else {
+    const { data: newExam, error: createErr } = await supabase
+      .from('exams')
+      .insert({
+        title: form.title,
+        description: form.description || null,
+        department: form.department,
+        created_by: myId,
+      })
+      .select('id')
+      .single();
+
+    if (createErr || !newExam) {
+      showMsg('❌ ' + (createErr?.message || 'Fehler'), false);
+      setSaving(false);
+      return;
+    }
+
+    examId = newExam.id;
+  }
+
+  const wqs = writtenForm.filter(q => q.question.trim());
+
+  if (wqs.length > 0) {
+    const { error: wErr } = await supabase
+      .from('exam_written_questions')
+      .insert(
         wqs.map((q, i) => ({
           exam_id: examId,
           question: q.question,
           type: q.type,
           options: q.options,
-          correct_answer: q.correct_answer,
+          correct_answer: q.correct_answer || null,
           section: q.section || null,
           order_index: i,
         }))
       );
-      if (wErr) { showMsg('❌ Fehler beim Speichern der Fragen: ' + wErr.message, false); setSaving(false); return; }
-    }
 
-    const oqs = oralForm.filter(q => q.question.trim());
-    if (oqs.length > 0) {
-      await supabase.from('exam_oral_questions').insert(
+    if (wErr) {
+      showMsg('❌ ' + wErr.message, false);
+      setSaving(false);
+      return;
+    }
+  }
+
+  const oqs = oralForm.filter(q => q.question.trim());
+
+  if (oqs.length > 0) {
+    await supabase
+      .from('exam_oral_questions')
+      .insert(
         oqs.map((q, i) => ({
           exam_id: examId,
           question: q.question,
@@ -306,13 +338,13 @@ async function saveExam(isEdit: boolean) {
           order_index: i,
         }))
       );
-    }
-
-    showMsg(isEdit ? '✅ Prüfung aktualisiert!' : '✅ Prüfung erstellt!');
-    await loadExams();
-    setView('list');
-    setSaving(false);
   }
+
+  showMsg(isEdit ? '✅ Prüfung aktualisiert!' : '✅ Prüfung erstellt!');
+  await loadExams();
+  setView('list');
+  setSaving(false);
+}
 
   async function createSession() {
     if (!candidateId || !selectedExam) return;
@@ -441,28 +473,44 @@ async function saveExam(isEdit: boolean) {
           </div>
         </div>
         <MsgBar />
+
         {pending.length > 0 ? (
           <div className="bg-[#1a1d27] border border-yellow-500/20 rounded-xl p-5">
             <h3 className="text-white font-medium mb-3">⏳ Ausstehend ({pending.length})</h3>
             <div className="space-y-3">
               {pending.map(r => (
                 <div key={r.id} className="bg-[#0f1117] rounded-xl p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <p className="text-white font-medium text-sm">{r.exam?.title}</p>
-                      <p className="text-gray-400 text-xs mt-0.5">Kandidat: <span className="text-blue-400">{r.candidate?.username}</span></p>
-                      <p className="text-gray-400 text-xs">Von: <span className="text-purple-400">{r.requester?.username}</span> · {new Date(r.created_at).toLocaleDateString('de-DE')}</p>
-                      {r.notes && <p className="text-gray-500 text-xs mt-1 italic">"{r.notes}"</p>}
+                  <div className="grid grid-cols-3 gap-3 mb-3">
+                    <div className="bg-[#1a1d27] rounded-lg p-3">
+                      <p className="text-gray-500 text-xs mb-0.5">Prüfer</p>
+                      <p className="text-white text-sm font-medium">{r.requester?.username}</p>
                     </div>
-                    <span className="text-xs px-2 py-1 rounded border text-yellow-400 bg-yellow-500/10 border-yellow-500/30">Ausstehend</span>
+                    <div className="bg-[#1a1d27] rounded-lg p-3">
+                      <p className="text-gray-500 text-xs mb-0.5">Kandidat</p>
+                      <p className="text-blue-400 text-sm font-medium">{r.candidate?.username}</p>
+                    </div>
+                    <div className="bg-[#1a1d27] rounded-lg p-3">
+                      <p className="text-gray-500 text-xs mb-0.5">Datum</p>
+                      <p className="text-white text-sm">{new Date(r.created_at).toLocaleDateString('de-DE')}</p>
+                    </div>
                   </div>
+                  <div className="bg-[#1a1d27] rounded-lg p-3 mb-3">
+                    <p className="text-gray-500 text-xs mb-0.5">Prüfung</p>
+                    <p className="text-white text-sm">{r.exam?.title}</p>
+                  </div>
+                  {r.notes && (
+                    <div className="bg-[#1a1d27] rounded-lg p-3 mb-3">
+                      <p className="text-gray-500 text-xs mb-0.5">Notiz</p>
+                      <p className="text-gray-300 text-sm italic">"{r.notes}"</p>
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <button onClick={() => reviewRequest(r.id, true)} disabled={saving}
-                      className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-medium py-2 rounded-lg text-xs transition">
+                      className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-medium py-2.5 rounded-lg text-sm transition">
                       ✅ Genehmigen & Link kopieren
                     </button>
                     <button onClick={() => reviewRequest(r.id, false)} disabled={saving}
-                      className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white font-medium py-2 rounded-lg text-xs transition">
+                      className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white font-medium py-2.5 rounded-lg text-sm transition">
                       ❌ Ablehnen
                     </button>
                   </div>
@@ -471,24 +519,31 @@ async function saveExam(isEdit: boolean) {
             </div>
           </div>
         ) : (
-          <div className="text-center py-8 bg-[#1a1d27] border border-white/10 rounded-xl">
-            <p className="text-2xl mb-2">✅</p>
-            <p className="text-gray-400 text-sm">Keine ausstehenden Anfragen</p>
+          <div className="text-center py-10 bg-[#1a1d27] border border-white/10 rounded-xl">
+            <p className="text-3xl mb-2">✅</p>
+            <p className="text-gray-400 text-sm">Keine ausstehenden Anordnungen</p>
           </div>
         )}
+
         {done.length > 0 && (
           <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5">
             <h3 className="text-white font-medium mb-3">📋 Erledigt ({done.length})</h3>
             <div className="space-y-2">
               {done.map(r => (
-                <div key={r.id} className="flex items-center justify-between bg-[#0f1117] rounded-lg px-4 py-3">
-                  <div>
-                    <p className="text-white text-sm">{r.exam?.title} → <span className="text-blue-400">{r.candidate?.username}</span></p>
-                    <p className="text-gray-500 text-xs">von {r.requester?.username} · {new Date(r.created_at).toLocaleDateString('de-DE')}</p>
+                <div key={r.id} className="bg-[#0f1117] rounded-xl p-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-white text-sm font-medium">{r.exam?.title}</p>
+                      <p className="text-gray-400 text-xs mt-0.5">
+                        Prüfer: <span className="text-purple-400">{r.requester?.username}</span> · 
+                        Kandidat: <span className="text-blue-400">{r.candidate?.username}</span>
+                      </p>
+                      <p className="text-gray-500 text-xs">{new Date(r.created_at).toLocaleDateString('de-DE')}</p>
+                    </div>
+                    <span className={`text-xs px-2 py-1 rounded border ${r.status === 'approved' ? 'text-green-400 bg-green-500/10 border-green-500/30' : 'text-red-400 bg-red-500/10 border-red-500/30'}`}>
+                      {r.status === 'approved' ? '✓ Genehmigt' : '✗ Abgelehnt'}
+                    </span>
                   </div>
-                  <span className={`text-xs px-2 py-1 rounded border ${r.status === 'approved' ? 'text-green-400 bg-green-500/10 border-green-500/30' : 'text-red-400 bg-red-500/10 border-red-500/30'}`}>
-                    {r.status === 'approved' ? '✓ Genehmigt' : '✗ Abgelehnt'}
-                  </span>
                 </div>
               ))}
             </div>
@@ -734,21 +789,30 @@ async function saveExam(isEdit: boolean) {
             </div>
           ))}
         </div>
-        <div className="bg-[#1a1d27] border border-blue-500/20 rounded-xl p-5">
-          <h3 className="text-white font-medium mb-3">🚀 Prüfung starten</h3>
+       <div className="bg-[#1a1d27] border border-blue-500/20 rounded-xl p-5">
+          <h3 className="text-white font-medium mb-3">📋 Prüfung anordnen</h3>
           <div className="flex gap-3">
             <select value={candidateId} onChange={e => setCandidateId(e.target.value)}
               className="flex-1 bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500">
               <option value="">Kandidat auswählen...</option>
               {members.filter(m => m.id !== myId).map(m => <option key={m.id} value={m.id}>{m.username}</option>)}
             </select>
-            <button onClick={createSession} disabled={!candidateId || saving}
+            <button onClick={async () => {
+              if (!candidateId || !selectedExam) return;
+              setSaving(true);
+              const { error } = await supabase.from('exam_requests').insert({
+                exam_id: selectedExam.id, requested_by: myId, candidate_id: candidateId,
+              });
+              if (error) { showMsg('❌ ' + error.message, false); }
+              else { showMsg('✅ Anordnung gestellt! Top Management wird benachrichtigt.'); setCandidateId(''); }
+              setSaving(false);
+            }} disabled={!candidateId || saving}
               className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-medium px-5 py-2.5 rounded-lg text-sm transition">
-              🔗 Link generieren
+              📋 Anordnen
             </button>
           </div>
-          <p className="text-gray-500 text-xs mt-2">Link wird automatisch kopiert.</p>
-        </div>
+        </div>,
+
         {sessions.length > 0 && (
           <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5">
             <h3 className="text-white font-medium mb-3">📊 Prüflinge</h3>
@@ -909,4 +973,4 @@ async function saveExam(isEdit: boolean) {
       )}
     </div>
   );
-}
+} 
