@@ -242,42 +242,63 @@ export default function ExamsPage() {
     setView('edit');
   }
 
-  async function saveExam(isEdit: boolean) {
-    if (!form.title.trim()) return;
-    setSaving(true);
+async function saveExam(isEdit: boolean) {
+  if (!form.title.trim()) return;
+  setSaving(true);
 
-    let targetId = isEdit && selectedExam ? selectedExam.id : null;
-
-    if (isEdit && targetId) {
-      await supabase.from('exams').update({ title: form.title, description: form.description || null, department: form.department }).eq('id', targetId);
-      await supabase.from('exam_written_questions').delete().eq('exam_id', targetId);
-      await supabase.from('exam_oral_questions').delete().eq('exam_id', targetId);
-    } else {
-      const { data: exam } = await supabase.from('exams').insert({
-        title: form.title, description: form.description || null, department: form.department, created_by: myId,
-      }).select().single();
-      if (!exam) { setSaving(false); return; }
-      targetId = (exam as any).id;
-    }
-
+  if (isEdit && selectedExam) {
+    const examId = selectedExam.id;
+    await supabase.from('exams').update({
+      title: form.title, description: form.description || null, department: form.department,
+    }).eq('id', examId);
+    await supabase.from('exam_written_questions').delete().eq('exam_id', examId);
+    await supabase.from('exam_oral_questions').delete().eq('exam_id', examId);
     const wqs = writtenForm.filter(q => q.question.trim());
     if (wqs.length > 0) {
       await supabase.from('exam_written_questions').insert(
-        wqs.map((q, i) => ({ exam_id: targetId, question: q.question, type: q.type, options: q.options, correct_answer: q.correct_answer, section: q.section || null, order_index: i }))
+        wqs.map((q, i) => ({ exam_id: examId, question: q.question, type: q.type, options: q.options, correct_answer: q.correct_answer, section: q.section || null, order_index: i }))
       );
     }
     const oqs = oralForm.filter(q => q.question.trim());
     if (oqs.length > 0) {
       await supabase.from('exam_oral_questions').insert(
-        oqs.map((q, i) => ({ exam_id: targetId, question: q.question, sample_answer: q.sample_answer || null, order_index: i }))
+        oqs.map((q, i) => ({ exam_id: examId, question: q.question, sample_answer: q.sample_answer || null, order_index: i }))
       );
     }
+    showMsg('✅ Prüfung aktualisiert!');
+  } else {
+    const { data: exam, error } = await supabase.from('exams').insert({
+      title: form.title, description: form.description || null,
+      department: form.department, created_by: myId,
+    }).select('id').single();
 
-    showMsg(isEdit ? '✅ Prüfung aktualisiert!' : '✅ Prüfung erstellt!');
-    await loadExams();
-    setView('list');
-    setSaving(false);
+    if (!exam || error) {
+      showMsg('❌ Fehler beim Erstellen.', false);
+      setSaving(false);
+      return;
+    }
+
+    const examId = exam.id;
+    const wqs = writtenForm.filter(q => q.question.trim());
+    if (wqs.length > 0) {
+      const { error: wErr } = await supabase.from('exam_written_questions').insert(
+        wqs.map((q, i) => ({ exam_id: examId, question: q.question, type: q.type, options: q.options, correct_answer: q.correct_answer, section: q.section || null, order_index: i }))
+      );
+      if (wErr) console.error('Written questions error:', wErr);
+    }
+    const oqs = oralForm.filter(q => q.question.trim());
+    if (oqs.length > 0) {
+      await supabase.from('exam_oral_questions').insert(
+        oqs.map((q, i) => ({ exam_id: examId, question: q.question, sample_answer: q.sample_answer || null, order_index: i }))
+      );
+    }
+    showMsg('✅ Prüfung erstellt!');
   }
+
+  await loadExams();
+  setView('list');
+  setSaving(false);
+}
 
   // ─── SESSION ──────────────────────────────────────────────────────────────
   async function createSession() {
