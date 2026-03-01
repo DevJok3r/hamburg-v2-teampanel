@@ -224,9 +224,9 @@ export default function ExamsPage() {
   }
 
   // ─── CREATE / EDIT ────────────────────────────────────────────────────────
-  function openCreate() {
+   function openCreate() {
     setSelectedExam(null);
-    setForm({ title: '', description: '', department: myDepts[0] || 'moderation_team' });
+    setForm({ title: '', description: '', department: isTopMgmt ? 'moderation_team' : (myDepts[0] || 'moderation_team') });
     setWrittenForm([]);
     setOralForm([]);
     setView('create');
@@ -447,7 +447,7 @@ async function saveExam(isEdit: boolean) {
           </div>
         </div>
         <MsgBar />
-        
+
         {/* Ausstehende Anfragen (Top Management) */}
         {isTopMgmt && pending.length > 0 && (
           <div className="bg-[#1a1d27] border border-yellow-500/20 rounded-xl p-5">
