@@ -132,7 +132,7 @@ export default function PruefungPage({ params }: { params: { token: string } }) 
 
         <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4">
           <p className="text-yellow-400 text-sm">
-            ℹ️ Beantworte alle Fragen so ausführlich wie möglich. Deine Antworten werden automatisch gespeichert.
+           ℹ️ Beantworte alle Fragen so ausführlich wie möglich. Deine Antworten werden automatisch gespeichert.
           </p>
         </div>
 
