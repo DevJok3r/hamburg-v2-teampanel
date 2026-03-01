@@ -2,31 +2,41 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { use } from 'react';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-export default function PruefungPage({ params }: { params: { token: string } }) {
-  const [loading, setLoading]   = useState(true);
-  const [session, setSession]   = useState<any>(null);
-  const [exam, setExam]         = useState<any>(null);
+export default function PruefungPage({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = use(params);
+  const [loading, setLoading]     = useState(true);
+  const [session, setSession]     = useState<any>(null);
+  const [exam, setExam]           = useState<any>(null);
   const [questions, setQuestions] = useState<any[]>([]);
-  const [answers, setAnswers]   = useState<Record<string, string>>({});
+  const [answers, setAnswers]     = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
-  const [saving, setSaving]     = useState(false);
-  const [error, setError]       = useState('');
+  const [saving, setSaving]       = useState(false);
+  const [error, setError]         = useState('');
 
   useEffect(() => {
     async function load() {
-      const { data: s } = await supabase
+      console.log('Loading token:', token);
+      
+      const { data: s, error: sErr } = await supabase
         .from('exam_sessions')
         .select('*')
-        .eq('token', params.token)
+        .eq('token', token)
         .single();
 
-      if (!s) { setError('Prüfungslink ungültig oder abgelaufen.'); setLoading(false); return; }
+      console.log('Session:', s, 'Error:', sErr);
+
+      if (sErr || !s) { 
+        setError(`Prüfungslink ungültig oder abgelaufen. (${sErr?.message})`); 
+        setLoading(false); 
+        return; 
+      }
       if (s.written_submitted_at) { setSubmitted(true); setLoading(false); return; }
 
       const { data: e } = await supabase.from('exams').select('*').eq('id', s.exam_id).single();
@@ -36,7 +46,6 @@ export default function PruefungPage({ params }: { params: { token: string } }) 
       setExam(e);
       setQuestions(q || []);
 
-      // Gespeicherte Antworten laden falls vorhanden
       if (s.written_answers && Object.keys(s.written_answers).length > 0) {
         setAnswers(s.written_answers);
       }
@@ -44,7 +53,7 @@ export default function PruefungPage({ params }: { params: { token: string } }) 
       setLoading(false);
     }
     load();
-  }, [params.token]);
+  }, [token]);
 
   async function submit() {
     const unanswered = questions.filter(q => !answers[q.id]?.trim());
@@ -56,15 +65,14 @@ export default function PruefungPage({ params }: { params: { token: string } }) 
       written_answers: answers,
       written_submitted_at: new Date().toISOString(),
       status: 'written_submitted',
-    }).eq('token', params.token);
+    }).eq('token', token);
     setSubmitted(true);
     setSaving(false);
   }
 
-  // Auto-save
   async function saveProgress() {
     if (!session) return;
-    await supabase.from('exam_sessions').update({ written_answers: answers }).eq('token', params.token);
+    await supabase.from('exam_sessions').update({ written_answers: answers }).eq('token', token);
   }
 
   if (loading) return (
@@ -77,7 +85,8 @@ export default function PruefungPage({ params }: { params: { token: string } }) 
     <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
       <div className="text-center">
         <p className="text-4xl mb-4">❌</p>
-        <p className="text-white font-bold text-xl">{error}</p>
+        <p className="text-white font-bold text-xl mb-2">Prüfungslink ungültig oder abgelaufen.</p>
+        <p className="text-red-400 text-xs">{error}</p>
       </div>
     </div>
   );
@@ -102,7 +111,6 @@ export default function PruefungPage({ params }: { params: { token: string } }) 
 
   return (
     <div className="min-h-screen bg-[#0f1117]">
-      {/* Header */}
       <div className="bg-[#1a1d27] border-b border-white/10 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
@@ -115,14 +123,12 @@ export default function PruefungPage({ params }: { params: { token: string } }) 
               <p className="text-gray-400 text-xs">beantwortet</p>
             </div>
           </div>
-          {/* Fortschritt */}
           <div className="mt-3 w-full bg-white/10 rounded-full h-1.5">
             <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
           </div>
         </div>
       </div>
 
-      {/* Fragen */}
       <div className="max-w-2xl mx-auto px-6 py-8 space-y-6">
         {exam?.description && (
           <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4">
@@ -132,7 +138,7 @@ export default function PruefungPage({ params }: { params: { token: string } }) 
 
         <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4">
           <p className="text-yellow-400 text-sm">
-           ℹ️ Beantworte alle Fragen so ausführlich wie möglich. Deine Antworten werden automatisch gespeichert.
+            ℹ️ Beantworte alle Fragen so ausführlich wie möglich. Deine Antworten werden automatisch gespeichert.
           </p>
         </div>
 
@@ -141,8 +147,7 @@ export default function PruefungPage({ params }: { params: { token: string } }) 
           return (
             <div key={q.id} className={`bg-[#1a1d27] border rounded-xl p-6 transition ${answered ? 'border-blue-500/30' : 'border-white/10'}`}>
               <div className="flex items-start gap-3 mb-4">
-                <span className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold
-                  ${answered ? 'bg-blue-600 text-white' : 'bg-white/10 text-gray-400'}`}>
+                <span className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${answered ? 'bg-blue-600 text-white' : 'bg-white/10 text-gray-400'}`}>
                   {answered ? '✓' : i + 1}
                 </span>
                 <p className="text-white font-medium leading-relaxed">{q.question}</p>
@@ -158,13 +163,6 @@ export default function PruefungPage({ params }: { params: { token: string } }) 
           );
         })}
 
-        {questions.length === 0 && (
-          <div className="text-center py-8">
-            <p className="text-gray-500">Keine schriftlichen Fragen vorhanden.</p>
-          </div>
-        )}
-
-        {/* Einreichen */}
         <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5 space-y-3">
           <div className="flex items-center justify-between text-sm">
             <span className="text-gray-400">Fortschritt</span>
