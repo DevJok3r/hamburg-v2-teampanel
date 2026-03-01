@@ -2,8 +2,25 @@
 
 import { useState, useEffect } from 'react';
 import { createClientSupabaseClient } from '@/lib/supabase/client';
-import { ROLE_HIERARCHY } from '@/lib/permissions';
 import { UserRole } from '@/types';
+
+const ROLE_LEVEL: Record<string, number> = {
+  top_management:    100,
+  management:         80,
+  junior_management:  80,
+  senior_moderator:   40,
+  senior_developer:   40,
+  senior_content:     40,
+  senior_event:       40,
+  moderator:          20,
+  developer:          20,
+  content_producer:   20,
+  event_organizer:    20,
+  trial_moderator:    10,
+  trial_developer:    10,
+  trial_content:      10,
+  trial_event:        10,
+};
 
 const DEPARTMENTS = [
   { key: 'moderation_team',  label: 'Moderation',  icon: '🛡️' },
@@ -32,7 +49,6 @@ interface WrittenQuestion {
   section?: string;
 }
 
-// ─── QUESTION EDITOR (außerhalb damit kein Focus-Loss) ────────────────────
 function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
   q: WrittenQuestion;
   i: number;
@@ -114,7 +130,7 @@ function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
 }
 
 export default function ExamsPage() {
-  const [myRole, setMyRole]   = useState<UserRole | null>(null);
+  const [myRole, setMyRole]   = useState<string>('');
   const [myId, setMyId]       = useState('');
   const [myDepts, setMyDepts] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -144,11 +160,7 @@ export default function ExamsPage() {
   const [practicalNotes, setPracticalNotes]   = useState('');
   const [overallNotes, setOverallNotes]       = useState('');
 
-  // Requests
-  const [requests, setRequests]         = useState<any[]>([]);
-  const [requestExamId, setRequestExamId]     = useState('');
-  const [requestCandidateId, setRequestCandidateId] = useState('');
-  const [requestNotes, setRequestNotes]       = useState('');
+  const [requests, setRequests]               = useState<any[]>([]);
 
   const supabase = createClientSupabaseClient();
 
@@ -162,7 +174,10 @@ export default function ExamsPage() {
     if (!user) return;
     setMyId(user.id);
     const { data: p } = await supabase.from('profiles').select('role, departments').eq('id', user.id).single();
-    if (p) { setMyRole(p.role as UserRole); setMyDepts(p.departments || []); }
+    if (p) {
+      setMyRole(p.role || '');
+      setMyDepts(p.departments || []);
+    }
     const { data: m } = await supabase.from('profiles').select('id, username, role').eq('is_active', true).order('username');
     setMembers(m || []);
     await loadExams();
@@ -197,15 +212,13 @@ export default function ExamsPage() {
 
   useEffect(() => { load(); }, []);
 
-  const canManage    = myRole ? ROLE_HIERARCHY[myRole] >= 80 : false;
+  const roleLevel    = ROLE_LEVEL[myRole] || 0;
+  const canManage    = roleLevel >= 80;
   const isTopMgmt    = myRole === 'top_management';
   const visibleExams = exams.filter(e =>
-    isTopMgmt ||
-    (myRole === 'management' && myDepts.includes(e.department)) ||
-    (myRole === 'junior_management' && myDepts.includes(e.department))
+    isTopMgmt || myDepts.includes(e.department)
   );
 
-  // ─── QUESTION HELPERS ─────────────────────────────────────────────────────
   function newQuestion(type: QuestionType): WrittenQuestion {
     return { id: Date.now(), question: '', type, options: type === 'multiple_choice' ? ['', '', '', ''] : [], correct_answer: type === 'true_false' ? 'true' : '', section: '' };
   }
@@ -223,8 +236,7 @@ export default function ExamsPage() {
     }));
   }
 
-  // ─── CREATE / EDIT ────────────────────────────────────────────────────────
-   function openCreate() {
+  function openCreate() {
     setSelectedExam(null);
     setForm({ title: '', description: '', department: isTopMgmt ? 'moderation_team' : (myDepts[0] || 'moderation_team') });
     setWrittenForm([]);
@@ -242,65 +254,61 @@ export default function ExamsPage() {
     setView('edit');
   }
 
-async function saveExam(isEdit: boolean) {
-  if (!form.title.trim()) return;
-  setSaving(true);
+  async function saveExam(isEdit: boolean) {
+    if (!form.title.trim()) return;
+    setSaving(true);
 
-  if (isEdit && selectedExam) {
-    const examId = selectedExam.id;
-    await supabase.from('exams').update({
-      title: form.title, description: form.description || null, department: form.department,
-    }).eq('id', examId);
-    await supabase.from('exam_written_questions').delete().eq('exam_id', examId);
-    await supabase.from('exam_oral_questions').delete().eq('exam_id', examId);
-    const wqs = writtenForm.filter(q => q.question.trim());
-    if (wqs.length > 0) {
-      await supabase.from('exam_written_questions').insert(
-        wqs.map((q, i) => ({ exam_id: examId, question: q.question, type: q.type, options: q.options, correct_answer: q.correct_answer, section: q.section || null, order_index: i }))
-      );
-    }
-    const oqs = oralForm.filter(q => q.question.trim());
-    if (oqs.length > 0) {
-      await supabase.from('exam_oral_questions').insert(
-        oqs.map((q, i) => ({ exam_id: examId, question: q.question, sample_answer: q.sample_answer || null, order_index: i }))
-      );
-    }
-    showMsg('✅ Prüfung aktualisiert!');
-  } else {
-    const { data: exam, error } = await supabase.from('exams').insert({
-      title: form.title, description: form.description || null,
-      department: form.department, created_by: myId,
-    }).select('id').single();
+    if (isEdit && selectedExam) {
+      const examId = selectedExam.id;
+      await supabase.from('exams').update({ title: form.title, description: form.description || null, department: form.department }).eq('id', examId);
+      await supabase.from('exam_written_questions').delete().eq('exam_id', examId);
+      await supabase.from('exam_oral_questions').delete().eq('exam_id', examId);
+      const wqs = writtenForm.filter(q => q.question.trim());
+      if (wqs.length > 0) {
+        await supabase.from('exam_written_questions').insert(
+          wqs.map((q, i) => ({ exam_id: examId, question: q.question, type: q.type, options: q.options, correct_answer: q.correct_answer, section: q.section || null, order_index: i }))
+        );
+      }
+      const oqs = oralForm.filter(q => q.question.trim());
+      if (oqs.length > 0) {
+        await supabase.from('exam_oral_questions').insert(
+          oqs.map((q, i) => ({ exam_id: examId, question: q.question, sample_answer: q.sample_answer || null, order_index: i }))
+        );
+      }
+      showMsg('✅ Prüfung aktualisiert!');
+    } else {
+      const { data: exam, error } = await supabase.from('exams').insert({
+        title: form.title, description: form.description || null,
+        department: form.department, created_by: myId,
+      }).select('id').single();
 
-    if (!exam || error) {
-      showMsg('❌ Fehler beim Erstellen.', false);
-      setSaving(false);
-      return;
+      if (!exam || error) {
+        showMsg('❌ Fehler beim Erstellen.', false);
+        setSaving(false);
+        return;
+      }
+
+      const examId = exam.id;
+      const wqs = writtenForm.filter(q => q.question.trim());
+      if (wqs.length > 0) {
+        await supabase.from('exam_written_questions').insert(
+          wqs.map((q, i) => ({ exam_id: examId, question: q.question, type: q.type, options: q.options, correct_answer: q.correct_answer, section: q.section || null, order_index: i }))
+        );
+      }
+      const oqs = oralForm.filter(q => q.question.trim());
+      if (oqs.length > 0) {
+        await supabase.from('exam_oral_questions').insert(
+          oqs.map((q, i) => ({ exam_id: examId, question: q.question, sample_answer: q.sample_answer || null, order_index: i }))
+        );
+      }
+      showMsg('✅ Prüfung erstellt!');
     }
 
-    const examId = exam.id;
-    const wqs = writtenForm.filter(q => q.question.trim());
-    if (wqs.length > 0) {
-      const { error: wErr } = await supabase.from('exam_written_questions').insert(
-        wqs.map((q, i) => ({ exam_id: examId, question: q.question, type: q.type, options: q.options, correct_answer: q.correct_answer, section: q.section || null, order_index: i }))
-      );
-      if (wErr) console.error('Written questions error:', wErr);
-    }
-    const oqs = oralForm.filter(q => q.question.trim());
-    if (oqs.length > 0) {
-      await supabase.from('exam_oral_questions').insert(
-        oqs.map((q, i) => ({ exam_id: examId, question: q.question, sample_answer: q.sample_answer || null, order_index: i }))
-      );
-    }
-    showMsg('✅ Prüfung erstellt!');
+    await loadExams();
+    setView('list');
+    setSaving(false);
   }
 
-  await loadExams();
-  setView('list');
-  setSaving(false);
-}
-
-  // ─── SESSION ──────────────────────────────────────────────────────────────
   async function createSession() {
     if (!candidateId || !selectedExam) return;
     setSaving(true);
@@ -310,7 +318,7 @@ async function saveExam(isEdit: boolean) {
     if (session) {
       const link = `${window.location.origin}/pruefung/${(session as any).token}`;
       await navigator.clipboard.writeText(link);
-      showMsg('✅ Link kopiert! Schick ihn dem Kandidaten per Discord DM.');
+      showMsg('✅ Link kopiert!');
       await loadDetail(selectedExam);
       setCandidateId('');
     }
@@ -331,22 +339,6 @@ async function saveExam(isEdit: boolean) {
     showMsg('✅ Prüfung gelöscht.');
   }
 
-  // ─── REQUESTS ─────────────────────────────────────────────────────────────
-  async function submitRequest() {
-    if (!requestExamId || !requestCandidateId) return;
-    setSaving(true);
-    await supabase.from('exam_requests').insert({
-      exam_id: requestExamId, requested_by: myId,
-      candidate_id: requestCandidateId, notes: requestNotes || null,
-    });
-    showMsg('✅ Anfrage gesendet! Top Management wird benachrichtigt.');
-    setRequestExamId('');
-    setRequestCandidateId('');
-    setRequestNotes('');
-    await loadRequests();
-    setSaving(false);
-  }
-
   async function reviewRequest(id: string, approved: boolean) {
     setSaving(true);
     if (approved) {
@@ -358,7 +350,7 @@ async function saveExam(isEdit: boolean) {
         if (session) {
           const link = `${window.location.origin}/pruefung/${(session as any).token}`;
           await navigator.clipboard.writeText(link);
-          showMsg('✅ Genehmigt! Link wurde kopiert.');
+          showMsg('✅ Genehmigt! Link kopiert.');
         }
       }
     } else {
@@ -372,7 +364,6 @@ async function saveExam(isEdit: boolean) {
     setSaving(false);
   }
 
-  // ─── MÜNDLICH ─────────────────────────────────────────────────────────────
   function startOral(session: any) {
     setSelectedSession(session);
     setOralResults(session.oral_results || {});
@@ -393,7 +384,6 @@ async function saveExam(isEdit: boolean) {
     setSaving(false);
   }
 
-  // ─── PRAKTISCH ────────────────────────────────────────────────────────────
   function startPractical(session: any) {
     setSelectedSession(session);
     setPracticalPassed(session.practical_passed ?? null);
@@ -413,7 +403,7 @@ async function saveExam(isEdit: boolean) {
       practical_completed_at: new Date().toISOString(), overall_notes: overallNotes || null,
       status: overallOk ? 'passed' : 'failed', completed_at: new Date().toISOString(),
     }).eq('id', selectedSession.id);
-    showMsg(`✅ Prüfung abgeschlossen – ${overallOk ? 'BESTANDEN' : 'NICHT BESTANDEN'}!`);
+    showMsg(`✅ ${overallOk ? 'BESTANDEN' : 'NICHT BESTANDEN'}!`);
     await loadDetail(selectedExam);
     setView('detail');
     setSaving(false);
@@ -422,7 +412,6 @@ async function saveExam(isEdit: boolean) {
   if (loading) return <div className="text-gray-400 text-center py-12">Lade...</div>;
   if (!canManage) return <div className="text-red-400 text-center py-12">Nur Junior Management+ kann Prüfungen verwalten.</div>;
 
-  // ─── MSG COMPONENT ────────────────────────────────────────────────────────
   const MsgBar = () => msg ? (
     <div className={`rounded-xl px-4 py-3 text-sm font-medium border ${msg.ok ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>{msg.text}</div>
   ) : null;
@@ -443,23 +432,21 @@ async function saveExam(isEdit: boolean) {
           <BackBtn to="list" />
           <div>
             <h1 className="text-2xl font-bold text-white">Prüfungsanordnungen</h1>
-            <p className="text-gray-400 text-sm">Anfragen von Management · {pending.length} ausstehend</p>
+            <p className="text-gray-400 text-sm">{pending.length} ausstehend</p>
           </div>
         </div>
         <MsgBar />
-
-        {/* Ausstehende Anfragen (Top Management) */}
-        {isTopMgmt && pending.length > 0 && (
+        {pending.length > 0 ? (
           <div className="bg-[#1a1d27] border border-yellow-500/20 rounded-xl p-5">
-            <h3 className="text-white font-medium mb-3">⏳ Ausstehende Anfragen ({pending.length})</h3>
+            <h3 className="text-white font-medium mb-3">⏳ Ausstehend ({pending.length})</h3>
             <div className="space-y-3">
               {pending.map(r => (
                 <div key={r.id} className="bg-[#0f1117] rounded-xl p-4">
-                  <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-start justify-between mb-3">
                     <div>
                       <p className="text-white font-medium text-sm">{r.exam?.title}</p>
-                      <p className="text-gray-400 text-xs">Kandidat: <span className="text-blue-400">{r.candidate?.username}</span></p>
-                      <p className="text-gray-400 text-xs">Angefordert von: <span className="text-purple-400">{r.requester?.username}</span> · {new Date(r.created_at).toLocaleDateString('de-DE')}</p>
+                      <p className="text-gray-400 text-xs mt-0.5">Kandidat: <span className="text-blue-400">{r.candidate?.username}</span></p>
+                      <p className="text-gray-400 text-xs">Von: <span className="text-purple-400">{r.requester?.username}</span> · {new Date(r.created_at).toLocaleDateString('de-DE')}</p>
                       {r.notes && <p className="text-gray-500 text-xs mt-1 italic">"{r.notes}"</p>}
                     </div>
                     <span className="text-xs px-2 py-1 rounded border text-yellow-400 bg-yellow-500/10 border-yellow-500/30">Ausstehend</span>
@@ -478,16 +465,12 @@ async function saveExam(isEdit: boolean) {
               ))}
             </div>
           </div>
-        )}
-
-        {isTopMgmt && pending.length === 0 && (
+        ) : (
           <div className="text-center py-8 bg-[#1a1d27] border border-white/10 rounded-xl">
             <p className="text-2xl mb-2">✅</p>
             <p className="text-gray-400 text-sm">Keine ausstehenden Anfragen</p>
           </div>
         )}
-
-        {/* Erledigte Anfragen */}
         {done.length > 0 && (
           <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5">
             <h3 className="text-white font-medium mb-3">📋 Erledigt ({done.length})</h3>
@@ -871,15 +854,17 @@ async function saveExam(isEdit: boolean) {
           <p className="text-gray-400 text-sm mt-1">Schriftlich · Mündlich · Praktisch</p>
         </div>
         <div className="flex gap-2">
-         {isTopMgmt && (
-          <button onClick={() => { loadRequests(); setView('requests'); }}
-            className={`font-medium px-4 py-2 rounded-lg transition text-sm flex items-center gap-2 border ${requests.filter(r => r.status === 'pending').length > 0 ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/20' : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10'}`}>
-          📋 Anordnungen
-    {requests.filter(r => r.status === 'pending').length > 0 && (
-      <span className="bg-yellow-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full">{requests.filter(r => r.status === 'pending').length}</span>
-    )}
-  </button>
-)}
+          {isTopMgmt && (
+            <button onClick={() => { loadRequests(); setView('requests'); }}
+              className="font-medium px-4 py-2 rounded-lg transition text-sm flex items-center gap-2 border bg-white/5 text-gray-400 border-white/10 hover:bg-white/10">
+              📋 Anordnungen
+            </button>
+          )}
+          <button onClick={openCreate}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition text-sm flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+            Neue Prüfung
+          </button>
         </div>
       </div>
       <MsgBar />
