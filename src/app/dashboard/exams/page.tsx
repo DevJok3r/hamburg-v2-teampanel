@@ -21,7 +21,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 type QuestionType = 'open' | 'multiple_choice' | 'true_false';
-type View = 'list' | 'create' | 'edit' | 'detail' | 'oral' | 'practical';
+type View = 'list' | 'create' | 'edit' | 'detail' | 'oral' | 'practical' | 'requests';
 
 interface WrittenQuestion {
   id: number | string;
@@ -32,266 +32,7 @@ interface WrittenQuestion {
   section?: string;
 }
 
-export default function ExamsPage() {
-  const [myRole, setMyRole]   = useState<UserRole | null>(null);
-  const [myId, setMyId]       = useState('');
-  const [myDepts, setMyDepts] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [view, setView]       = useState<View>('list');
-  const [exams, setExams]     = useState<any[]>([]);
-  const [members, setMembers] = useState<any[]>([]);
-  const [msg, setMsg]         = useState<{ text: string; ok: boolean } | null>(null);
-
-  const [selectedExam, setSelectedExam]       = useState<any>(null);
-  const [writtenQs, setWrittenQs]             = useState<any[]>([]);
-  const [oralQs, setOralQs]                   = useState<any[]>([]);
-  const [sessions, setSessions]               = useState<any[]>([]);
-  const [selectedSession, setSelectedSession] = useState<any>(null);
-  const [showAnswersFor, setShowAnswersFor]   = useState<string | null>(null);
-
-  const [form, setForm]               = useState({ title: '', description: '', department: 'moderation_team' });
-  const [writtenForm, setWrittenForm] = useState<WrittenQuestion[]>([]);
-  const [oralForm, setOralForm]       = useState<{ id: number; question: string; sample_answer: string }[]>([]);
-  const [saving, setSaving]           = useState(false);
-  const [candidateId, setCandidateId] = useState('');
-
-  const [oralIndex, setOralIndex]     = useState(0);
-  const [showAnswer, setShowAnswer]   = useState(false);
-  const [oralResults, setOralResults] = useState<Record<string, { passed: boolean; note: string }>>({});
-
-  const [practicalPassed, setPracticalPassed] = useState<boolean | null>(null);
-  const [practicalNotes, setPracticalNotes]   = useState('');
-  const [overallNotes, setOverallNotes]       = useState('');
-
-  const supabase = createClientSupabaseClient();
-
-  function showMsg(text: string, ok = true) {
-    setMsg({ text, ok });
-    setTimeout(() => setMsg(null), 4000);
-  }
-
-  async function load() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    setMyId(user.id);
-    const { data: p } = await supabase.from('profiles').select('role, departments').eq('id', user.id).single();
-    if (p) { setMyRole(p.role as UserRole); setMyDepts(p.departments || []); }
-    const { data: m } = await supabase.from('profiles').select('id, username, role').eq('is_active', true).order('username');
-    setMembers(m || []);
-    await loadExams();
-    setLoading(false);
-  }
-
-  async function loadExams() {
-    const { data } = await supabase.from('exams').select('*, creator:created_by(username)').order('created_at', { ascending: false });
-    setExams(data || []);
-  }
-
-  async function loadDetail(exam: any) {
-    setSelectedExam(exam);
-    setShowAnswersFor(null);
-    const { data: wq } = await supabase.from('exam_written_questions').select('*').eq('exam_id', exam.id).order('order_index');
-    const { data: oq } = await supabase.from('exam_oral_questions').select('*').eq('exam_id', exam.id).order('order_index');
-    const { data: s }  = await supabase.from('exam_sessions')
-      .select('*, candidate:candidate_id(username, role), examiner:examiner_id(username)')
-      .eq('exam_id', exam.id).order('created_at', { ascending: false });
-    setWrittenQs(wq || []);
-    setOralQs(oq || []);
-    setSessions(s || []);
-    setView('detail');
-  }
-
-  useEffect(() => { load(); }, []);
-
-  const canManage = myRole ? ROLE_HIERARCHY[myRole] >= 80 : false;
-  const visibleExams = exams.filter(e =>
-    myRole === 'top_management' ||
-    (myRole === 'management' && myDepts.includes(e.department)) ||
-    (myRole === 'junior_management' && myDepts.includes(e.department))
-  );
-
-  // ─── FRAGE HELPERS ────────────────────────────────────────────────────────
-  function newQuestion(type: QuestionType): WrittenQuestion {
-    return {
-      id: Date.now(),
-      question: '',
-      type,
-      options: type === 'multiple_choice' ? ['', '', '', ''] : [],
-      correct_answer: type === 'true_false' ? 'true' : '',
-      section: '',
-    };
-  }
-
-  function updateWrittenQ(id: number | string, field: string, value: any) {
-    setWrittenForm(p => p.map(q => q.id === id ? { ...q, [field]: value } : q));
-  }
-
-  function updateOption(qId: number | string, idx: number, value: string) {
-    setWrittenForm(p => p.map(q => {
-      if (q.id !== qId) return q;
-      const opts = [...q.options];
-      opts[idx] = value;
-      return { ...q, options: opts };
-    }));
-  }
-
-  // ─── CREATE / EDIT ────────────────────────────────────────────────────────
-  function openCreate() {
-    setSelectedExam(null);
-    setForm({ title: '', description: '', department: myDepts[0] || 'moderation_team' });
-    setWrittenForm([]);
-    setOralForm([]);
-    setView('create');
-  }
-
-  async function openEdit(exam: any) {
-    setSelectedExam(exam);
-    setForm({ title: exam.title, description: exam.description || '', department: exam.department });
-    const { data: wq } = await supabase.from('exam_written_questions').select('*').eq('exam_id', exam.id).order('order_index');
-    const { data: oq } = await supabase.from('exam_oral_questions').select('*').eq('exam_id', exam.id).order('order_index');
-    setWrittenForm((wq || []).map((q: any) => ({
-      id: q.id, question: q.question, type: q.type || 'open',
-      options: q.options || [], correct_answer: q.correct_answer || '', section: q.section || '',
-    })));
-    setOralForm((oq || []).map((q: any) => ({ id: q.id, question: q.question, sample_answer: q.sample_answer || '' })));
-    setView('edit');
-  }
-
-  async function saveExam(isEdit: boolean) {
-    if (!form.title.trim()) return;
-    setSaving(true);
-    const examId = isEdit && selectedExam ? selectedExam.id : null;
-
-    if (isEdit && examId) {
-      await supabase.from('exams').update({ title: form.title, description: form.description || null, department: form.department }).eq('id', examId);
-      await supabase.from('exam_written_questions').delete().eq('exam_id', examId);
-      await supabase.from('exam_oral_questions').delete().eq('exam_id', examId);
-    } else {
-      const { data: exam } = await supabase.from('exams').insert({
-        title: form.title, description: form.description || null, department: form.department, created_by: myId,
-      }).select().single();
-      if (!exam) { setSaving(false); return; }
-      examId === null && (exam as any) && ((exam as any).id) && Object.assign({ examId: (exam as any).id });
-      // Use exam.id directly
-      const wqs = writtenForm.filter(q => q.question.trim());
-      if (wqs.length > 0) {
-        await supabase.from('exam_written_questions').insert(
-          wqs.map((q, i) => ({ exam_id: (exam as any).id, question: q.question, type: q.type, options: q.options, correct_answer: q.correct_answer, section: q.section || null, order_index: i }))
-        );
-      }
-      const oqs = oralForm.filter(q => q.question.trim());
-      if (oqs.length > 0) {
-        await supabase.from('exam_oral_questions').insert(
-          oqs.map((q, i) => ({ exam_id: (exam as any).id, question: q.question, sample_answer: q.sample_answer || null, order_index: i }))
-        );
-      }
-      showMsg('✅ Prüfung erstellt!');
-      await loadExams();
-      setView('list');
-      setSaving(false);
-      return;
-    }
-
-    const wqs = writtenForm.filter(q => q.question.trim());
-    if (wqs.length > 0) {
-      await supabase.from('exam_written_questions').insert(
-        wqs.map((q, i) => ({ exam_id: examId, question: q.question, type: q.type, options: q.options, correct_answer: q.correct_answer, section: q.section || null, order_index: i }))
-      );
-    }
-    const oqs = oralForm.filter(q => q.question.trim());
-    if (oqs.length > 0) {
-      await supabase.from('exam_oral_questions').insert(
-        oqs.map((q, i) => ({ exam_id: examId, question: q.question, sample_answer: q.sample_answer || null, order_index: i }))
-      );
-    }
-    showMsg('✅ Prüfung aktualisiert!');
-    await loadExams();
-    setView('list');
-    setSaving(false);
-  }
-
-  // ─── SESSION ──────────────────────────────────────────────────────────────
-  async function createSession() {
-    if (!candidateId || !selectedExam) return;
-    setSaving(true);
-    const { data: session } = await supabase.from('exam_sessions').insert({
-      exam_id: selectedExam.id, candidate_id: candidateId, examiner_id: myId,
-    }).select().single();
-    if (session) {
-      const link = `${window.location.origin}/pruefung/${(session as any).token}`;
-      await navigator.clipboard.writeText(link);
-      showMsg('✅ Link kopiert! Schick ihn dem Kandidaten per Discord DM.');
-      await loadDetail(selectedExam);
-      setCandidateId('');
-    }
-    setSaving(false);
-  }
-
-  async function deleteSession(sessionId: string) {
-    if (!confirm('Prüfling wirklich entfernen?')) return;
-    await supabase.from('exam_sessions').delete().eq('id', sessionId);
-    setSessions(p => p.filter(s => s.id !== sessionId));
-    showMsg('✅ Prüfling entfernt.');
-  }
-
-  async function deleteExam(id: string) {
-    if (!confirm('Prüfung wirklich löschen?')) return;
-    await supabase.from('exams').delete().eq('id', id);
-    setExams(p => p.filter(e => e.id !== id));
-    showMsg('✅ Prüfung gelöscht.');
-  }
-
-  // ─── MÜNDLICH ─────────────────────────────────────────────────────────────
-  function startOral(session: any) {
-    setSelectedSession(session);
-    setOralResults(session.oral_results || {});
-    setOralIndex(0);
-    setShowAnswer(false);
-    setView('oral');
-  }
-
-  async function finishOral() {
-    if (!selectedSession) return;
-    setSaving(true);
-    await supabase.from('exam_sessions').update({
-      oral_results: oralResults, oral_completed_at: new Date().toISOString(), status: 'oral_done',
-    }).eq('id', selectedSession.id);
-    showMsg('✅ Mündlicher Teil abgeschlossen!');
-    await loadDetail(selectedExam);
-    setView('detail');
-    setSaving(false);
-  }
-
-  // ─── PRAKTISCH ────────────────────────────────────────────────────────────
-  function startPractical(session: any) {
-    setSelectedSession(session);
-    setPracticalPassed(session.practical_passed ?? null);
-    setPracticalNotes(session.practical_notes || '');
-    setOverallNotes(session.overall_notes || '');
-    setView('practical');
-  }
-
-  async function finishPractical() {
-    if (!selectedSession || practicalPassed === null) return;
-    setSaving(true);
-    const oralVals = Object.values(selectedSession.oral_results || {}) as any[];
-    const oralOk = oralVals.length > 0 ? oralVals.filter(r => r.passed).length / oralVals.length >= 0.7 : true;
-    const overallOk = oralOk && practicalPassed;
-    await supabase.from('exam_sessions').update({
-      practical_passed: practicalPassed, practical_notes: practicalNotes || null,
-      practical_completed_at: new Date().toISOString(), overall_notes: overallNotes || null,
-      status: overallOk ? 'passed' : 'failed', completed_at: new Date().toISOString(),
-    }).eq('id', selectedSession.id);
-    showMsg(`✅ Prüfung abgeschlossen – ${overallOk ? 'BESTANDEN' : 'NICHT BESTANDEN'}!`);
-    await loadDetail(selectedExam);
-    setView('detail');
-    setSaving(false);
-  }
-
-  if (loading) return <div className="text-gray-400 text-center py-12">Lade...</div>;
-  if (!canManage) return <div className="text-red-400 text-center py-12">Nur Junior Management+ kann Prüfungen verwalten.</div>;
-
-  // ─── FRAGE EDITOR COMPONENT ───────────────────────────────────────────────
+// ─── QUESTION EDITOR (außerhalb damit kein Focus-Loss) ────────────────────
 function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
   q: WrittenQuestion;
   i: number;
@@ -318,8 +59,7 @@ function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
             if (t === 'multiple_choice') onUpdate(q.id, 'options', ['', '', '', '']);
             if (t === 'true_false') { onUpdate(q.id, 'options', []); onUpdate(q.id, 'correct_answer', 'true'); }
             if (t === 'open') { onUpdate(q.id, 'options', []); onUpdate(q.id, 'correct_answer', ''); }
-          }}
-            className="bg-[#0f1117] border border-white/10 rounded-lg px-2 py-1 text-white text-xs focus:outline-none">
+          }} className="bg-[#0f1117] border border-white/10 rounded-lg px-2 py-1 text-white text-xs focus:outline-none">
             <option value="open">📝 Offene Frage</option>
             <option value="multiple_choice">🔘 Multiple Choice</option>
             <option value="true_false">✅ Wahr/Falsch</option>
@@ -373,20 +113,417 @@ function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
   );
 }
 
+export default function ExamsPage() {
+  const [myRole, setMyRole]   = useState<UserRole | null>(null);
+  const [myId, setMyId]       = useState('');
+  const [myDepts, setMyDepts] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [view, setView]       = useState<View>('list');
+  const [exams, setExams]     = useState<any[]>([]);
+  const [members, setMembers] = useState<any[]>([]);
+  const [msg, setMsg]         = useState<{ text: string; ok: boolean } | null>(null);
+
+  const [selectedExam, setSelectedExam]       = useState<any>(null);
+  const [writtenQs, setWrittenQs]             = useState<any[]>([]);
+  const [oralQs, setOralQs]                   = useState<any[]>([]);
+  const [sessions, setSessions]               = useState<any[]>([]);
+  const [selectedSession, setSelectedSession] = useState<any>(null);
+  const [showAnswersFor, setShowAnswersFor]   = useState<string | null>(null);
+
+  const [form, setForm]               = useState({ title: '', description: '', department: 'moderation_team' });
+  const [writtenForm, setWrittenForm] = useState<WrittenQuestion[]>([]);
+  const [oralForm, setOralForm]       = useState<{ id: number; question: string; sample_answer: string }[]>([]);
+  const [saving, setSaving]           = useState(false);
+  const [candidateId, setCandidateId] = useState('');
+
+  const [oralIndex, setOralIndex]     = useState(0);
+  const [showAnswer, setShowAnswer]   = useState(false);
+  const [oralResults, setOralResults] = useState<Record<string, { passed: boolean; note: string }>>({});
+
+  const [practicalPassed, setPracticalPassed] = useState<boolean | null>(null);
+  const [practicalNotes, setPracticalNotes]   = useState('');
+  const [overallNotes, setOverallNotes]       = useState('');
+
+  // Requests
+  const [requests, setRequests]         = useState<any[]>([]);
+  const [requestExamId, setRequestExamId]     = useState('');
+  const [requestCandidateId, setRequestCandidateId] = useState('');
+  const [requestNotes, setRequestNotes]       = useState('');
+
+  const supabase = createClientSupabaseClient();
+
+  function showMsg(text: string, ok = true) {
+    setMsg({ text, ok });
+    setTimeout(() => setMsg(null), 4000);
+  }
+
+  async function load() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setMyId(user.id);
+    const { data: p } = await supabase.from('profiles').select('role, departments').eq('id', user.id).single();
+    if (p) { setMyRole(p.role as UserRole); setMyDepts(p.departments || []); }
+    const { data: m } = await supabase.from('profiles').select('id, username, role').eq('is_active', true).order('username');
+    setMembers(m || []);
+    await loadExams();
+    setLoading(false);
+  }
+
+  async function loadExams() {
+    const { data } = await supabase.from('exams').select('*, creator:created_by(username)').order('created_at', { ascending: false });
+    setExams(data || []);
+  }
+
+  async function loadRequests() {
+    const { data } = await supabase.from('exam_requests')
+      .select('*, exam:exam_id(title, department), requester:requested_by(username), candidate:candidate_id(username), reviewer:reviewed_by(username)')
+      .order('created_at', { ascending: false });
+    setRequests(data || []);
+  }
+
+  async function loadDetail(exam: any) {
+    setSelectedExam(exam);
+    setShowAnswersFor(null);
+    const { data: wq } = await supabase.from('exam_written_questions').select('*').eq('exam_id', exam.id).order('order_index');
+    const { data: oq } = await supabase.from('exam_oral_questions').select('*').eq('exam_id', exam.id).order('order_index');
+    const { data: s }  = await supabase.from('exam_sessions')
+      .select('*, candidate:candidate_id(username, role), examiner:examiner_id(username)')
+      .eq('exam_id', exam.id).order('created_at', { ascending: false });
+    setWrittenQs(wq || []);
+    setOralQs(oq || []);
+    setSessions(s || []);
+    setView('detail');
+  }
+
+  useEffect(() => { load(); }, []);
+
+  const canManage    = myRole ? ROLE_HIERARCHY[myRole] >= 80 : false;
+  const isTopMgmt    = myRole === 'top_management';
+  const visibleExams = exams.filter(e =>
+    isTopMgmt ||
+    (myRole === 'management' && myDepts.includes(e.department)) ||
+    (myRole === 'junior_management' && myDepts.includes(e.department))
+  );
+
+  // ─── QUESTION HELPERS ─────────────────────────────────────────────────────
+  function newQuestion(type: QuestionType): WrittenQuestion {
+    return { id: Date.now(), question: '', type, options: type === 'multiple_choice' ? ['', '', '', ''] : [], correct_answer: type === 'true_false' ? 'true' : '', section: '' };
+  }
+
+  function updateWrittenQ(id: number | string, field: string, value: any) {
+    setWrittenForm(p => p.map(q => q.id === id ? { ...q, [field]: value } : q));
+  }
+
+  function updateOption(qId: number | string, idx: number, value: string) {
+    setWrittenForm(p => p.map(q => {
+      if (q.id !== qId) return q;
+      const opts = [...q.options];
+      opts[idx] = value;
+      return { ...q, options: opts };
+    }));
+  }
+
+  // ─── CREATE / EDIT ────────────────────────────────────────────────────────
+  function openCreate() {
+    setSelectedExam(null);
+    setForm({ title: '', description: '', department: myDepts[0] || 'moderation_team' });
+    setWrittenForm([]);
+    setOralForm([]);
+    setView('create');
+  }
+
+  async function openEdit(exam: any) {
+    setSelectedExam(exam);
+    setForm({ title: exam.title, description: exam.description || '', department: exam.department });
+    const { data: wq } = await supabase.from('exam_written_questions').select('*').eq('exam_id', exam.id).order('order_index');
+    const { data: oq } = await supabase.from('exam_oral_questions').select('*').eq('exam_id', exam.id).order('order_index');
+    setWrittenForm((wq || []).map((q: any) => ({ id: q.id, question: q.question, type: q.type || 'open', options: q.options || [], correct_answer: q.correct_answer || '', section: q.section || '' })));
+    setOralForm((oq || []).map((q: any) => ({ id: q.id, question: q.question, sample_answer: q.sample_answer || '' })));
+    setView('edit');
+  }
+
+  async function saveExam(isEdit: boolean) {
+    if (!form.title.trim()) return;
+    setSaving(true);
+
+    let targetId = isEdit && selectedExam ? selectedExam.id : null;
+
+    if (isEdit && targetId) {
+      await supabase.from('exams').update({ title: form.title, description: form.description || null, department: form.department }).eq('id', targetId);
+      await supabase.from('exam_written_questions').delete().eq('exam_id', targetId);
+      await supabase.from('exam_oral_questions').delete().eq('exam_id', targetId);
+    } else {
+      const { data: exam } = await supabase.from('exams').insert({
+        title: form.title, description: form.description || null, department: form.department, created_by: myId,
+      }).select().single();
+      if (!exam) { setSaving(false); return; }
+      targetId = (exam as any).id;
+    }
+
+    const wqs = writtenForm.filter(q => q.question.trim());
+    if (wqs.length > 0) {
+      await supabase.from('exam_written_questions').insert(
+        wqs.map((q, i) => ({ exam_id: targetId, question: q.question, type: q.type, options: q.options, correct_answer: q.correct_answer, section: q.section || null, order_index: i }))
+      );
+    }
+    const oqs = oralForm.filter(q => q.question.trim());
+    if (oqs.length > 0) {
+      await supabase.from('exam_oral_questions').insert(
+        oqs.map((q, i) => ({ exam_id: targetId, question: q.question, sample_answer: q.sample_answer || null, order_index: i }))
+      );
+    }
+
+    showMsg(isEdit ? '✅ Prüfung aktualisiert!' : '✅ Prüfung erstellt!');
+    await loadExams();
+    setView('list');
+    setSaving(false);
+  }
+
+  // ─── SESSION ──────────────────────────────────────────────────────────────
+  async function createSession() {
+    if (!candidateId || !selectedExam) return;
+    setSaving(true);
+    const { data: session } = await supabase.from('exam_sessions').insert({
+      exam_id: selectedExam.id, candidate_id: candidateId, examiner_id: myId,
+    }).select().single();
+    if (session) {
+      const link = `${window.location.origin}/pruefung/${(session as any).token}`;
+      await navigator.clipboard.writeText(link);
+      showMsg('✅ Link kopiert! Schick ihn dem Kandidaten per Discord DM.');
+      await loadDetail(selectedExam);
+      setCandidateId('');
+    }
+    setSaving(false);
+  }
+
+  async function deleteSession(sessionId: string) {
+    if (!confirm('Prüfling wirklich entfernen?')) return;
+    await supabase.from('exam_sessions').delete().eq('id', sessionId);
+    setSessions(p => p.filter(s => s.id !== sessionId));
+    showMsg('✅ Prüfling entfernt.');
+  }
+
+  async function deleteExam(id: string) {
+    if (!confirm('Prüfung wirklich löschen?')) return;
+    await supabase.from('exams').delete().eq('id', id);
+    setExams(p => p.filter(e => e.id !== id));
+    showMsg('✅ Prüfung gelöscht.');
+  }
+
+  // ─── REQUESTS ─────────────────────────────────────────────────────────────
+  async function submitRequest() {
+    if (!requestExamId || !requestCandidateId) return;
+    setSaving(true);
+    await supabase.from('exam_requests').insert({
+      exam_id: requestExamId, requested_by: myId,
+      candidate_id: requestCandidateId, notes: requestNotes || null,
+    });
+    showMsg('✅ Anfrage gesendet! Top Management wird benachrichtigt.');
+    setRequestExamId('');
+    setRequestCandidateId('');
+    setRequestNotes('');
+    await loadRequests();
+    setSaving(false);
+  }
+
+  async function reviewRequest(id: string, approved: boolean) {
+    setSaving(true);
+    if (approved) {
+      const req = requests.find(r => r.id === id);
+      if (req) {
+        const { data: session } = await supabase.from('exam_sessions').insert({
+          exam_id: req.exam_id, candidate_id: req.candidate_id, examiner_id: req.requested_by,
+        }).select().single();
+        if (session) {
+          const link = `${window.location.origin}/pruefung/${(session as any).token}`;
+          await navigator.clipboard.writeText(link);
+          showMsg('✅ Genehmigt! Link wurde kopiert.');
+        }
+      }
+    } else {
+      showMsg('❌ Anfrage abgelehnt.');
+    }
+    await supabase.from('exam_requests').update({
+      status: approved ? 'approved' : 'rejected',
+      reviewed_by: myId, reviewed_at: new Date().toISOString(),
+    }).eq('id', id);
+    await loadRequests();
+    setSaving(false);
+  }
+
+  // ─── MÜNDLICH ─────────────────────────────────────────────────────────────
+  function startOral(session: any) {
+    setSelectedSession(session);
+    setOralResults(session.oral_results || {});
+    setOralIndex(0);
+    setShowAnswer(false);
+    setView('oral');
+  }
+
+  async function finishOral() {
+    if (!selectedSession) return;
+    setSaving(true);
+    await supabase.from('exam_sessions').update({
+      oral_results: oralResults, oral_completed_at: new Date().toISOString(), status: 'oral_done',
+    }).eq('id', selectedSession.id);
+    showMsg('✅ Mündlicher Teil abgeschlossen!');
+    await loadDetail(selectedExam);
+    setView('detail');
+    setSaving(false);
+  }
+
+  // ─── PRAKTISCH ────────────────────────────────────────────────────────────
+  function startPractical(session: any) {
+    setSelectedSession(session);
+    setPracticalPassed(session.practical_passed ?? null);
+    setPracticalNotes(session.practical_notes || '');
+    setOverallNotes(session.overall_notes || '');
+    setView('practical');
+  }
+
+  async function finishPractical() {
+    if (!selectedSession || practicalPassed === null) return;
+    setSaving(true);
+    const oralVals = Object.values(selectedSession.oral_results || {}) as any[];
+    const oralOk = oralVals.length > 0 ? oralVals.filter(r => r.passed).length / oralVals.length >= 0.7 : true;
+    const overallOk = oralOk && practicalPassed;
+    await supabase.from('exam_sessions').update({
+      practical_passed: practicalPassed, practical_notes: practicalNotes || null,
+      practical_completed_at: new Date().toISOString(), overall_notes: overallNotes || null,
+      status: overallOk ? 'passed' : 'failed', completed_at: new Date().toISOString(),
+    }).eq('id', selectedSession.id);
+    showMsg(`✅ Prüfung abgeschlossen – ${overallOk ? 'BESTANDEN' : 'NICHT BESTANDEN'}!`);
+    await loadDetail(selectedExam);
+    setView('detail');
+    setSaving(false);
+  }
+
+  if (loading) return <div className="text-gray-400 text-center py-12">Lade...</div>;
+  if (!canManage) return <div className="text-red-400 text-center py-12">Nur Junior Management+ kann Prüfungen verwalten.</div>;
+
+  // ─── MSG COMPONENT ────────────────────────────────────────────────────────
+  const MsgBar = () => msg ? (
+    <div className={`rounded-xl px-4 py-3 text-sm font-medium border ${msg.ok ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>{msg.text}</div>
+  ) : null;
+
+  const BackBtn = ({ to }: { to: View }) => (
+    <button onClick={() => setView(to)} className="text-gray-400 hover:text-white transition">
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+    </button>
+  );
+
+  // ─── REQUESTS VIEW ────────────────────────────────────────────────────────
+  if (view === 'requests') {
+    const pending = requests.filter(r => r.status === 'pending');
+    const done    = requests.filter(r => r.status !== 'pending');
+    return (
+      <div className="max-w-3xl space-y-5">
+        <div className="flex items-center gap-3">
+          <BackBtn to="list" />
+          <div>
+            <h1 className="text-2xl font-bold text-white">Prüfungsanordnungen</h1>
+            <p className="text-gray-400 text-sm">Anfragen von Management · {pending.length} ausstehend</p>
+          </div>
+        </div>
+        <MsgBar />
+
+        {/* Neue Anfrage stellen (nicht Top Management) */}
+        {!isTopMgmt && (
+          <div className="bg-[#1a1d27] border border-blue-500/20 rounded-xl p-5 space-y-3">
+            <h3 className="text-white font-medium">📋 Prüfung anordnen</h3>
+            <p className="text-gray-400 text-xs">Stelle eine Anfrage an Top Management um eine Prüfung für einen Kandidaten zu genehmigen.</p>
+            <select value={requestExamId} onChange={e => setRequestExamId(e.target.value)}
+              className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500">
+              <option value="">Prüfung auswählen...</option>
+              {visibleExams.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
+            </select>
+            <select value={requestCandidateId} onChange={e => setRequestCandidateId(e.target.value)}
+              className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500">
+              <option value="">Kandidat auswählen...</option>
+              {members.filter(m => m.id !== myId).map(m => <option key={m.id} value={m.id}>{m.username}</option>)}
+            </select>
+            <textarea value={requestNotes} onChange={e => setRequestNotes(e.target.value)}
+              placeholder="Begründung / Notizen (optional)..." rows={2}
+              className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
+            <button onClick={submitRequest} disabled={saving || !requestExamId || !requestCandidateId}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-medium py-2.5 rounded-lg text-sm transition">
+              📤 Anfrage senden
+            </button>
+          </div>
+        )}
+
+        {/* Ausstehende Anfragen (Top Management) */}
+        {isTopMgmt && pending.length > 0 && (
+          <div className="bg-[#1a1d27] border border-yellow-500/20 rounded-xl p-5">
+            <h3 className="text-white font-medium mb-3">⏳ Ausstehende Anfragen ({pending.length})</h3>
+            <div className="space-y-3">
+              {pending.map(r => (
+                <div key={r.id} className="bg-[#0f1117] rounded-xl p-4">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <p className="text-white font-medium text-sm">{r.exam?.title}</p>
+                      <p className="text-gray-400 text-xs">Kandidat: <span className="text-blue-400">{r.candidate?.username}</span></p>
+                      <p className="text-gray-400 text-xs">Angefordert von: <span className="text-purple-400">{r.requester?.username}</span> · {new Date(r.created_at).toLocaleDateString('de-DE')}</p>
+                      {r.notes && <p className="text-gray-500 text-xs mt-1 italic">"{r.notes}"</p>}
+                    </div>
+                    <span className="text-xs px-2 py-1 rounded border text-yellow-400 bg-yellow-500/10 border-yellow-500/30">Ausstehend</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => reviewRequest(r.id, true)} disabled={saving}
+                      className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-medium py-2 rounded-lg text-xs transition">
+                      ✅ Genehmigen & Link kopieren
+                    </button>
+                    <button onClick={() => reviewRequest(r.id, false)} disabled={saving}
+                      className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white font-medium py-2 rounded-lg text-xs transition">
+                      ❌ Ablehnen
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {isTopMgmt && pending.length === 0 && (
+          <div className="text-center py-8 bg-[#1a1d27] border border-white/10 rounded-xl">
+            <p className="text-2xl mb-2">✅</p>
+            <p className="text-gray-400 text-sm">Keine ausstehenden Anfragen</p>
+          </div>
+        )}
+
+        {/* Erledigte Anfragen */}
+        {done.length > 0 && (
+          <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5">
+            <h3 className="text-white font-medium mb-3">📋 Erledigt ({done.length})</h3>
+            <div className="space-y-2">
+              {done.map(r => (
+                <div key={r.id} className="flex items-center justify-between bg-[#0f1117] rounded-lg px-4 py-3">
+                  <div>
+                    <p className="text-white text-sm">{r.exam?.title} → <span className="text-blue-400">{r.candidate?.username}</span></p>
+                    <p className="text-gray-500 text-xs">von {r.requester?.username} · {new Date(r.created_at).toLocaleDateString('de-DE')}</p>
+                  </div>
+                  <span className={`text-xs px-2 py-1 rounded border ${r.status === 'approved' ? 'text-green-400 bg-green-500/10 border-green-500/30' : 'text-red-400 bg-red-500/10 border-red-500/30'}`}>
+                    {r.status === 'approved' ? '✓ Genehmigt' : '✗ Abgelehnt'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // ─── CREATE / EDIT VIEW ───────────────────────────────────────────────────
   if (view === 'create' || view === 'edit') {
     const isEdit = view === 'edit';
     return (
       <div className="max-w-2xl space-y-6">
         <div className="flex items-center gap-3">
-          <button onClick={() => setView('list')} className="text-gray-400 hover:text-white transition">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-          </button>
+          <BackBtn to="list" />
           <h1 className="text-2xl font-bold text-white">{isEdit ? 'Prüfung bearbeiten' : 'Neue Prüfung erstellen'}</h1>
         </div>
-
-        {msg && <div className={`rounded-xl px-4 py-3 text-sm font-medium border ${msg.ok ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>{msg.text}</div>}
-
+        <MsgBar />
         <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5 space-y-4">
           <h3 className="text-white font-medium">Grundeinstellungen</h3>
           <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
@@ -399,46 +536,38 @@ function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
             <label className="text-gray-400 text-xs mb-1 block">Abteilung</label>
             <select value={form.department} onChange={e => setForm(p => ({ ...p, department: e.target.value }))}
               className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500">
-              {DEPARTMENTS.filter(d => myRole === 'top_management' || myDepts.includes(d.key)).map(d =>
+              {DEPARTMENTS.filter(d => isTopMgmt || myDepts.includes(d.key)).map(d =>
                 <option key={d.key} value={d.key}>{d.icon} {d.label}</option>
               )}
             </select>
           </div>
         </div>
 
-        {/* Schriftliche Fragen */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-white font-medium">📝 Schriftliche Fragen</h3>
-              <p className="text-gray-400 text-xs">Kandidat beantwortet über den Link · {writtenForm.length} Fragen</p>
+              <p className="text-gray-400 text-xs">{writtenForm.length} Fragen</p>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setWrittenForm(p => [...p, newQuestion('open')])}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg transition">+ Offen</button>
-              <button onClick={() => setWrittenForm(p => [...p, newQuestion('multiple_choice')])}
-                className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg transition">+ MC</button>
-              <button onClick={() => setWrittenForm(p => [...p, newQuestion('true_false')])}
-                className="bg-green-700 hover:bg-green-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg transition">+ W/F</button>
+              <button onClick={() => setWrittenForm(p => [...p, newQuestion('open')])} className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg transition">+ Offen</button>
+              <button onClick={() => setWrittenForm(p => [...p, newQuestion('multiple_choice')])} className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg transition">+ MC</button>
+              <button onClick={() => setWrittenForm(p => [...p, newQuestion('true_false')])} className="bg-green-700 hover:bg-green-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg transition">+ W/F</button>
             </div>
           </div>
-          {writtenForm.map((q, i) => <QuestionEditor key={q.id} q={q} i={i} onUpdate={updateWrittenQ} onUpdateOption={updateOption} onRemove={(id) => setWrittenForm(p => p.filter(fq => fq.id !== id))} />)}
-          {writtenForm.length === 0 && (
-            <div className="text-center py-5 bg-[#1a1d27] border border-dashed border-white/10 rounded-xl">
-              <p className="text-gray-500 text-sm">Fragen hinzufügen mit den Buttons oben</p>
-            </div>
-          )}
+          {writtenForm.map((q, i) => (
+            <QuestionEditor key={q.id} q={q} i={i} onUpdate={updateWrittenQ} onUpdateOption={updateOption} onRemove={id => setWrittenForm(p => p.filter(fq => fq.id !== id))} />
+          ))}
+          {writtenForm.length === 0 && <div className="text-center py-5 bg-[#1a1d27] border border-dashed border-white/10 rounded-xl"><p className="text-gray-500 text-sm">Fragen hinzufügen mit den Buttons oben</p></div>}
         </div>
 
-        {/* Mündliche Fragen */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-white font-medium">🎤 Mündliche Fragen</h3>
-              <p className="text-gray-400 text-xs">Nur der Prüfer sieht diese + Musterlösungen</p>
+              <p className="text-gray-400 text-xs">{oralForm.length} Fragen</p>
             </div>
-            <button onClick={() => setOralForm(p => [...p, { id: Date.now(), question: '', sample_answer: '' }])}
-              className="bg-orange-600 hover:bg-orange-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition">+ Frage</button>
+            <button onClick={() => setOralForm(p => [...p, { id: Date.now(), question: '', sample_answer: '' }])} className="bg-orange-600 hover:bg-orange-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition">+ Frage</button>
           </div>
           {oralForm.map((q, i) => (
             <div key={q.id} className="bg-[#1a1d27] border border-white/10 rounded-xl p-4 space-y-2">
@@ -454,11 +583,7 @@ function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
                 className="w-full bg-[#0f1117] border border-yellow-500/20 rounded-lg px-3 py-2 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-yellow-500 resize-none" />
             </div>
           ))}
-          {oralForm.length === 0 && (
-            <div className="text-center py-5 bg-[#1a1d27] border border-dashed border-white/10 rounded-xl">
-              <p className="text-gray-500 text-sm">Noch keine mündlichen Fragen</p>
-            </div>
-          )}
+          {oralForm.length === 0 && <div className="text-center py-5 bg-[#1a1d27] border border-dashed border-white/10 rounded-xl"><p className="text-gray-500 text-sm">Noch keine mündlichen Fragen</p></div>}
         </div>
 
         <div className="flex gap-2">
@@ -476,19 +601,16 @@ function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
   if (view === 'oral' && selectedSession) {
     const q = oralQs[oralIndex];
     const currentResult = oralResults[q?.id];
-    const answered = Object.keys(oralResults).length;
     return (
       <div className="max-w-2xl space-y-4">
         <div className="flex items-center gap-3">
-          <button onClick={() => setView('detail')} className="text-gray-400 hover:text-white transition">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-          </button>
+          <BackBtn to="detail" />
           <div>
             <h1 className="text-xl font-bold text-white">🎤 Mündlicher Teil</h1>
             <p className="text-gray-400 text-sm">Kandidat: <span className="text-blue-400 font-medium">{selectedSession.candidate?.username}</span></p>
           </div>
         </div>
-        {msg && <div className={`rounded-xl px-4 py-3 text-sm font-medium border ${msg.ok ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>{msg.text}</div>}
+        <MsgBar />
         <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-gray-400 text-xs">Fortschritt</span>
@@ -549,7 +671,7 @@ function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
             <button onClick={() => { setOralIndex(p => p + 1); setShowAnswer(false); }}
               className="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-medium py-2.5 rounded-lg text-sm transition">Weiter →</button>
           ) : (
-            <button onClick={finishOral} disabled={saving || answered === 0}
+            <button onClick={finishOral} disabled={saving || Object.keys(oralResults).length === 0}
               className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-bold py-2.5 rounded-lg text-sm transition">
               {saving ? 'Speichern...' : '✅ Mündlichen Teil abschließen'}
             </button>
@@ -564,17 +686,14 @@ function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
     return (
       <div className="max-w-2xl space-y-4">
         <div className="flex items-center gap-3">
-          <button onClick={() => setView('detail')} className="text-gray-400 hover:text-white transition">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-          </button>
+          <BackBtn to="detail" />
           <div>
             <h1 className="text-xl font-bold text-white">🔧 Praktischer Teil</h1>
             <p className="text-gray-400 text-sm">Kandidat: <span className="text-blue-400 font-medium">{selectedSession.candidate?.username}</span></p>
           </div>
         </div>
-        {msg && <div className={`rounded-xl px-4 py-3 text-sm font-medium border ${msg.ok ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>{msg.text}</div>}
+        <MsgBar />
         <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-6 space-y-5">
-          <p className="text-white font-medium">Bewertung des praktischen Teils</p>
           <div className="grid grid-cols-2 gap-3">
             <button onClick={() => setPracticalPassed(true)}
               className={`py-6 rounded-xl border text-sm font-bold transition flex flex-col items-center gap-2 ${practicalPassed === true ? 'bg-green-500/20 border-green-500/50 text-green-400' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-green-500/10 hover:border-green-500/30 hover:text-green-400'}`}>
@@ -607,9 +726,7 @@ function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
       <div className="max-w-3xl space-y-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={() => setView('list')} className="text-gray-400 hover:text-white transition">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-            </button>
+            <BackBtn to="list" />
             <div>
               <h1 className="text-2xl font-bold text-white">{selectedExam.title}</h1>
               <p className="text-gray-400 text-sm">{dept?.icon} {dept?.label} · {writtenQs.length} schriftl. · {oralQs.length} mündl.</p>
@@ -620,7 +737,7 @@ function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
             ✏️ Bearbeiten
           </button>
         </div>
-        {msg && <div className={`rounded-xl px-4 py-3 text-sm font-medium border ${msg.ok ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>{msg.text}</div>}
+        <MsgBar />
         <div className="grid grid-cols-3 gap-3">
           {[
             { label: 'Gesamt', val: sessions.length, color: 'border-white/10', text: 'text-white' },
@@ -671,8 +788,7 @@ function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className={`text-xs px-2 py-1 rounded border font-medium ${st.color}`}>{st.label}</span>
-                        <button onClick={() => deleteSession(s.id)}
-                          className="text-xs px-2 py-1 rounded border bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20 transition">🗑️</button>
+                        <button onClick={() => deleteSession(s.id)} className="text-xs px-2 py-1 rounded border bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20 transition">🗑️</button>
                       </div>
                     </div>
                     <div className="flex gap-2 flex-wrap">
@@ -683,14 +799,12 @@ function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
                         </button>
                       )}
                       {s.status === 'written_submitted' && (
-                        <button onClick={() => startOral(s)}
-                          className="text-xs px-3 py-1.5 rounded-lg border bg-orange-500/10 text-orange-400 border-orange-500/30 hover:bg-orange-500/20 transition">
+                        <button onClick={() => startOral(s)} className="text-xs px-3 py-1.5 rounded-lg border bg-orange-500/10 text-orange-400 border-orange-500/30 hover:bg-orange-500/20 transition">
                           🎤 Mündlichen Teil starten
                         </button>
                       )}
                       {s.status === 'oral_done' && (
-                        <button onClick={() => startPractical(s)}
-                          className="text-xs px-3 py-1.5 rounded-lg border bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500/20 transition">
+                        <button onClick={() => startPractical(s)} className="text-xs px-3 py-1.5 rounded-lg border bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500/20 transition">
                           🔧 Praktischen Teil starten
                         </button>
                       )}
@@ -704,11 +818,7 @@ function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
                         <p className="text-white text-xs font-bold">📝 Schriftliche Antworten</p>
                         {writtenQs.map((q, qi) => {
                           const answer = s.written_answers?.[q.id];
-                          const isCorrect = q.type === 'multiple_choice'
-                            ? answer === q.correct_answer
-                            : q.type === 'true_false'
-                            ? answer === q.correct_answer
-                            : null;
+                          const isCorrect = (q.type === 'multiple_choice' || q.type === 'true_false') ? answer === q.correct_answer : null;
                           return (
                             <div key={q.id} className={`rounded-lg p-4 border ${isCorrect === true ? 'bg-green-500/5 border-green-500/20' : isCorrect === false ? 'bg-red-500/5 border-red-500/20' : 'bg-[#1a1d27] border-white/5'}`}>
                               <div className="flex items-start justify-between gap-2 mb-2">
@@ -716,22 +826,13 @@ function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
                                   {q.section && <span className="text-blue-400 mr-1">[{q.section}]</span>}
                                   Frage {qi + 1}: {q.question}
                                 </p>
-                                {isCorrect !== null && (
-                                  <span className={`text-xs flex-shrink-0 ${isCorrect ? 'text-green-400' : 'text-red-400'}`}>
-                                    {isCorrect ? '✓ Richtig' : '✗ Falsch'}
-                                  </span>
-                                )}
+                                {isCorrect !== null && <span className={`text-xs flex-shrink-0 ${isCorrect ? 'text-green-400' : 'text-red-400'}`}>{isCorrect ? '✓ Richtig' : '✗ Falsch'}</span>}
                               </div>
                               {q.type === 'multiple_choice' && (
                                 <div className="space-y-1">
-                                  {q.options?.map((opt: string, oi: number) => (
-                                    <div key={oi} className={`text-xs px-2 py-1 rounded flex items-center gap-2 ${
-                                      answer === String(oi) && q.correct_answer === String(oi) ? 'bg-green-500/20 text-green-400' :
-                                      answer === String(oi) ? 'bg-red-500/20 text-red-400' :
-                                      q.correct_answer === String(oi) ? 'bg-green-500/10 text-green-500' :
-                                      'text-gray-500'}`}>
-                                      <span>{['A', 'B', 'C', 'D'][oi]})</span>
-                                      <span>{opt}</span>
+                                  {(q.options || []).map((opt: string, oi: number) => (
+                                    <div key={oi} className={`text-xs px-2 py-1 rounded flex items-center gap-2 ${answer === String(oi) && q.correct_answer === String(oi) ? 'bg-green-500/20 text-green-400' : answer === String(oi) ? 'bg-red-500/20 text-red-400' : q.correct_answer === String(oi) ? 'bg-green-500/10 text-green-500' : 'text-gray-500'}`}>
+                                      <span>{['A', 'B', 'C', 'D'][oi]})</span><span>{opt}</span>
                                       {answer === String(oi) && <span className="ml-auto">{q.correct_answer === String(oi) ? '✓' : '✗'}</span>}
                                       {answer !== String(oi) && q.correct_answer === String(oi) && <span className="ml-auto text-green-500">← Richtig</span>}
                                     </div>
@@ -741,21 +842,14 @@ function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
                               {q.type === 'true_false' && (
                                 <div className="flex gap-2">
                                   {['true', 'false'].map(v => (
-                                    <span key={v} className={`text-xs px-3 py-1 rounded border ${
-                                      answer === v && q.correct_answer === v ? 'bg-green-500/20 text-green-400 border-green-500/30' :
-                                      answer === v ? 'bg-red-500/20 text-red-400 border-red-500/30' :
-                                      q.correct_answer === v ? 'bg-green-500/10 text-green-500 border-green-500/20' :
-                                      'text-gray-600 border-white/5'}`}>
-                                      {v === 'true' ? '✅ Wahr' : '❌ Falsch'}
-                                      {answer === v && ' (gewählt)'}
+                                    <span key={v} className={`text-xs px-3 py-1 rounded border ${answer === v && q.correct_answer === v ? 'bg-green-500/20 text-green-400 border-green-500/30' : answer === v ? 'bg-red-500/20 text-red-400 border-red-500/30' : q.correct_answer === v ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'text-gray-600 border-white/5'}`}>
+                                      {v === 'true' ? '✅ Wahr' : '❌ Falsch'}{answer === v && ' (gewählt)'}
                                     </span>
                                   ))}
                                 </div>
                               )}
-                              {q.type === 'open' && (
-                                <p className="text-white text-sm whitespace-pre-wrap">
-                                  {answer || <span className="text-gray-500 italic">Keine Antwort</span>}
-                                </p>
+                              {(!q.type || q.type === 'open') && (
+                                <p className="text-white text-sm whitespace-pre-wrap">{answer || <span className="text-gray-500 italic">Keine Antwort</span>}</p>
                               )}
                             </div>
                           );
@@ -780,13 +874,22 @@ function QuestionEditor({ q, i, onUpdate, onUpdateOption, onRemove }: {
           <h1 className="text-2xl font-bold text-white">Prüfungen</h1>
           <p className="text-gray-400 text-sm mt-1">Schriftlich · Mündlich · Praktisch</p>
         </div>
-        <button onClick={openCreate}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition text-sm flex items-center gap-2">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-          Neue Prüfung
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => { loadRequests(); setView('requests'); }}
+            className={`font-medium px-4 py-2 rounded-lg transition text-sm flex items-center gap-2 border ${isTopMgmt && requests.filter(r => r.status === 'pending').length > 0 ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/20' : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10'}`}>
+            📋 Anordnungen
+            {isTopMgmt && requests.filter(r => r.status === 'pending').length > 0 && (
+              <span className="bg-yellow-500 text-black text-xs font-bold px-1.5 py-0.5 rounded-full">{requests.filter(r => r.status === 'pending').length}</span>
+            )}
+          </button>
+          <button onClick={openCreate}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition text-sm flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+            Neue Prüfung
+          </button>
+        </div>
       </div>
-      {msg && <div className={`rounded-xl px-4 py-3 text-sm font-medium border ${msg.ok ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>{msg.text}</div>}
+      <MsgBar />
       {DEPARTMENTS.map(dept => {
         const deptExams = visibleExams.filter(e => e.department === dept.key);
         if (deptExams.length === 0) return null;
