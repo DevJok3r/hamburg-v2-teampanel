@@ -6,10 +6,10 @@ import { ROLE_HIERARCHY } from '@/lib/permissions';
 import { UserRole } from '@/types';
 
 const DEPARTMENTS = [
-  { key: 'moderator',        label: 'Moderation',  icon: '🛡️' },
-  { key: 'developer',        label: 'Development',  icon: '💻' },
-  { key: 'content_producer', label: 'Content',      icon: '📱' },
-  { key: 'event_organizer',  label: 'Event',        icon: '🎉' },
+  { key: 'moderation_team',  label: 'Moderation',  icon: '🛡️' },
+  { key: 'development_team', label: 'Development',  icon: '💻' },
+  { key: 'content_team',     label: 'Content',      icon: '📱' },
+  { key: 'event_team',       label: 'Event',        icon: '🎉' },
 ];
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -39,9 +39,10 @@ export default function ExamsPage() {
   const [oralQs, setOralQs]                   = useState<any[]>([]);
   const [sessions, setSessions]               = useState<any[]>([]);
   const [selectedSession, setSelectedSession] = useState<any>(null);
+  const [showAnswersFor, setShowAnswersFor]   = useState<string | null>(null);
 
   // Create / Edit Form
-  const [form, setForm]               = useState({ title: '', description: '', department: 'moderator' });
+  const [form, setForm]               = useState({ title: '', description: '', department: 'moderation_team' });
   const [writtenForm, setWrittenForm] = useState<{ id: number; question: string }[]>([]);
   const [oralForm, setOralForm]       = useState<{ id: number; question: string; sample_answer: string }[]>([]);
   const [saving, setSaving]           = useState(false);
@@ -85,6 +86,7 @@ export default function ExamsPage() {
 
   async function loadDetail(exam: any) {
     setSelectedExam(exam);
+    setShowAnswersFor(null);
     const { data: wq } = await supabase.from('exam_written_questions').select('*').eq('exam_id', exam.id).order('order_index');
     const { data: oq } = await supabase.from('exam_oral_questions').select('*').eq('exam_id', exam.id).order('order_index');
     const { data: s } = await supabase.from('exam_sessions')
@@ -98,21 +100,23 @@ export default function ExamsPage() {
 
   useEffect(() => { load(); }, []);
 
-  // Nur Junior Management+ darf verwalten
+  // Junior Management+ darf verwalten
   const canManage = myRole ? ROLE_HIERARCHY[myRole] >= 80 : false;
 
-  // Prüfungen filtern: nur eigene Abteilung sehen
-  const visibleExams = exams.filter(e => myDepts.includes(e.department) || myRole === 'top_management');
+  // Top Management sieht alles, andere nur ihre Abteilung
+  const visibleExams = exams.filter(e =>
+    myRole === 'top_management' || myDepts.includes(e.department)
+  );
 
-  // ─── CREATE ────────────────────────────────────────────────────────────────
+  // ─── CREATE / EDIT ─────────────────────────────────────────────────────────
   function openCreate() {
-    setForm({ title: '', description: '', department: myDepts[0] || 'moderator' });
+    setSelectedExam(null);
+    setForm({ title: '', description: '', department: myDepts[0] || 'moderation_team' });
     setWrittenForm([]);
     setOralForm([]);
     setView('create');
   }
 
-  // ─── EDIT ──────────────────────────────────────────────────────────────────
   async function openEdit(exam: any) {
     setSelectedExam(exam);
     setForm({ title: exam.title, description: exam.description || '', department: exam.department });
@@ -126,66 +130,47 @@ export default function ExamsPage() {
   async function saveExam(isEdit: boolean) {
     if (!form.title.trim()) return;
     setSaving(true);
-
     if (isEdit && selectedExam) {
-      // Update Grunddaten
       await supabase.from('exams').update({
         title: form.title, description: form.description || null, department: form.department,
       }).eq('id', selectedExam.id);
-
-      // Fragen löschen und neu erstellen
       await supabase.from('exam_written_questions').delete().eq('exam_id', selectedExam.id);
       await supabase.from('exam_oral_questions').delete().eq('exam_id', selectedExam.id);
-
       if (writtenForm.filter(q => q.question.trim()).length > 0) {
         await supabase.from('exam_written_questions').insert(
-          writtenForm.filter(q => q.question.trim()).map((q, i) => ({
-            exam_id: selectedExam.id, question: q.question, order_index: i,
-          }))
+          writtenForm.filter(q => q.question.trim()).map((q, i) => ({ exam_id: selectedExam.id, question: q.question, order_index: i }))
         );
       }
       if (oralForm.filter(q => q.question.trim()).length > 0) {
         await supabase.from('exam_oral_questions').insert(
-          oralForm.filter(q => q.question.trim()).map((q, i) => ({
-            exam_id: selectedExam.id, question: q.question,
-            sample_answer: q.sample_answer || null, order_index: i,
-          }))
+          oralForm.filter(q => q.question.trim()).map((q, i) => ({ exam_id: selectedExam.id, question: q.question, sample_answer: q.sample_answer || null, order_index: i }))
         );
       }
       showMsg('✅ Prüfung aktualisiert!');
-      await loadExams();
-      setView('list');
     } else {
       const { data: exam } = await supabase.from('exams').insert({
-        title: form.title, description: form.description || null,
-        department: form.department, created_by: myId,
+        title: form.title, description: form.description || null, department: form.department, created_by: myId,
       }).select().single();
-
       if (exam) {
         if (writtenForm.filter(q => q.question.trim()).length > 0) {
           await supabase.from('exam_written_questions').insert(
-            writtenForm.filter(q => q.question.trim()).map((q, i) => ({
-              exam_id: exam.id, question: q.question, order_index: i,
-            }))
+            writtenForm.filter(q => q.question.trim()).map((q, i) => ({ exam_id: exam.id, question: q.question, order_index: i }))
           );
         }
         if (oralForm.filter(q => q.question.trim()).length > 0) {
           await supabase.from('exam_oral_questions').insert(
-            oralForm.filter(q => q.question.trim()).map((q, i) => ({
-              exam_id: exam.id, question: q.question,
-              sample_answer: q.sample_answer || null, order_index: i,
-            }))
+            oralForm.filter(q => q.question.trim()).map((q, i) => ({ exam_id: exam.id, question: q.question, sample_answer: q.sample_answer || null, order_index: i }))
           );
         }
         showMsg('✅ Prüfung erstellt!');
-        await loadExams();
-        setView('list');
       }
     }
+    await loadExams();
+    setView('list');
     setSaving(false);
   }
 
-  // ─── SESSION ERSTELLEN ────────────────────────────────────────────────────
+  // ─── SESSION ───────────────────────────────────────────────────────────────
   async function createSession() {
     if (!candidateId || !selectedExam) return;
     setSaving(true);
@@ -202,7 +187,6 @@ export default function ExamsPage() {
     setSaving(false);
   }
 
-  // ─── SESSION LÖSCHEN ─────────────────────────────────────────────────────
   async function deleteSession(sessionId: string) {
     if (!confirm('Prüfling wirklich entfernen?')) return;
     await supabase.from('exam_sessions').delete().eq('id', sessionId);
@@ -210,7 +194,14 @@ export default function ExamsPage() {
     showMsg('✅ Prüfling entfernt.');
   }
 
-  // ─── MÜNDLICHE PRÜFUNG ────────────────────────────────────────────────────
+  async function deleteExam(id: string) {
+    if (!confirm('Prüfung wirklich löschen?')) return;
+    await supabase.from('exams').delete().eq('id', id);
+    setExams(p => p.filter(e => e.id !== id));
+    showMsg('✅ Prüfung gelöscht.');
+  }
+
+  // ─── MÜNDLICH ──────────────────────────────────────────────────────────────
   function startOral(session: any) {
     setSelectedSession(session);
     setOralResults(session.oral_results || {});
@@ -238,7 +229,7 @@ export default function ExamsPage() {
     setSaving(false);
   }
 
-  // ─── PRAKTISCHER TEIL ─────────────────────────────────────────────────────
+  // ─── PRAKTISCH ─────────────────────────────────────────────────────────────
   function startPractical(session: any) {
     setSelectedSession(session);
     setPracticalPassed(session.practical_passed ?? null);
@@ -267,13 +258,6 @@ export default function ExamsPage() {
     setSaving(false);
   }
 
-  async function deleteExam(id: string) {
-    if (!confirm('Prüfung wirklich löschen?')) return;
-    await supabase.from('exams').delete().eq('id', id);
-    setExams(p => p.filter(e => e.id !== id));
-    showMsg('✅ Prüfung gelöscht.');
-  }
-
   if (loading) return <div className="text-gray-400 text-center py-12">Lade...</div>;
   if (!canManage) return <div className="text-red-400 text-center py-12">Nur Junior Management+ kann Prüfungen verwalten.</div>;
 
@@ -283,7 +267,7 @@ export default function ExamsPage() {
     return (
       <div className="max-w-2xl space-y-6">
         <div className="flex items-center gap-3">
-          <button onClick={() => setView(isEdit ? 'list' : 'list')} className="text-gray-400 hover:text-white transition">
+          <button onClick={() => setView('list')} className="text-gray-400 hover:text-white transition">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
           <h1 className="text-2xl font-bold text-white">{isEdit ? 'Prüfung bearbeiten' : 'Neue Prüfung erstellen'}</h1>
@@ -389,6 +373,7 @@ export default function ExamsPage() {
           </div>
         </div>
         {msg && <div className={`rounded-xl px-4 py-3 text-sm font-medium border ${msg.ok ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>{msg.text}</div>}
+
         <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-gray-400 text-xs">Fortschritt</span>
@@ -409,6 +394,7 @@ export default function ExamsPage() {
             })}
           </div>
         </div>
+
         {q && (
           <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-6 space-y-4">
             <span className="text-blue-400 text-xs font-bold bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 rounded">Frage {oralIndex + 1}</span>
@@ -443,6 +429,7 @@ export default function ExamsPage() {
               className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
           </div>
         )}
+
         <div className="flex gap-3">
           <button onClick={() => { setOralIndex(p => Math.max(p - 1, 0)); setShowAnswer(false); }} disabled={oralIndex === 0}
             className="bg-white/5 hover:bg-white/10 disabled:opacity-30 text-gray-300 px-5 py-2.5 rounded-lg text-sm transition">← Zurück</button>
@@ -529,7 +516,9 @@ export default function ExamsPage() {
             ✏️ Bearbeiten
           </button>
         </div>
+
         {msg && <div className={`rounded-xl px-4 py-3 text-sm font-medium border ${msg.ok ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>{msg.text}</div>}
+
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-4 text-center">
             <p className="text-2xl font-bold text-white">{sessions.length}</p>
@@ -544,6 +533,7 @@ export default function ExamsPage() {
             <p className="text-gray-400 text-xs mt-1">Nicht bestanden</p>
           </div>
         </div>
+
         <div className="bg-[#1a1d27] border border-blue-500/20 rounded-xl p-5">
           <h3 className="text-white font-medium mb-3">🚀 Prüfung für Kandidaten starten</h3>
           <div className="flex gap-3">
@@ -561,14 +551,16 @@ export default function ExamsPage() {
           </div>
           <p className="text-gray-500 text-xs mt-2">Link wird automatisch kopiert.</p>
         </div>
+
         {sessions.length > 0 && (
           <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5">
             <h3 className="text-white font-medium mb-3">📊 Prüflinge</h3>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {sessions.map(s => {
                 const st = STATUS_LABELS[s.status] || STATUS_LABELS['written_pending'];
                 const oralVals = Object.values(s.oral_results || {}) as any[];
                 const oralPct = oralVals.length > 0 ? Math.round(oralVals.filter((r: any) => r.passed).length / oralVals.length * 100) : null;
+                const showingAnswers = showAnswersFor === s.id;
                 return (
                   <div key={s.id} className="bg-[#0f1117] rounded-xl p-4">
                     <div className="flex items-center justify-between mb-2">
@@ -589,7 +581,15 @@ export default function ExamsPage() {
                         </button>
                       </div>
                     </div>
+
+                    {/* Aktions-Buttons */}
                     <div className="flex gap-2 flex-wrap">
+                      {s.status !== 'written_pending' && (
+                        <button onClick={() => setShowAnswersFor(showingAnswers ? null : s.id)}
+                          className={`text-xs px-3 py-1.5 rounded-lg border transition ${showingAnswers ? 'bg-blue-500/20 text-blue-300 border-blue-500/50' : 'bg-blue-500/10 text-blue-400 border-blue-500/30 hover:bg-blue-500/20'}`}>
+                          📄 {showingAnswers ? 'Antworten ausblenden' : 'Schriftliche Antworten'}
+                        </button>
+                      )}
                       {s.status === 'written_submitted' && (
                         <button onClick={() => startOral(s)}
                           className="text-xs px-3 py-1.5 rounded-lg border bg-purple-500/10 text-purple-400 border-purple-500/30 hover:bg-purple-500/20 transition">
@@ -603,8 +603,29 @@ export default function ExamsPage() {
                         </button>
                       )}
                       {oralPct !== null && <span className="text-xs text-gray-400 self-center">Mündlich: {oralPct}%</span>}
-                      {s.status === 'passed' || s.status === 'failed' ? <span className="text-xs text-gray-400 self-center">Praktisch: {s.practical_passed ? '✅' : '❌'}</span> : null}
+                      {(s.status === 'passed' || s.status === 'failed') && (
+                        <span className="text-xs text-gray-400 self-center">Praktisch: {s.practical_passed ? '✅' : '❌'}</span>
+                      )}
                     </div>
+
+                    {/* Schriftliche Antworten */}
+                    {showingAnswers && (
+                      <div className="mt-4 border-t border-white/10 pt-4 space-y-3">
+                        <p className="text-white text-xs font-bold">📝 Schriftliche Antworten</p>
+                        {writtenQs.length === 0 && <p className="text-gray-500 text-xs">Keine schriftlichen Fragen vorhanden.</p>}
+                        {writtenQs.map((q, qi) => (
+                          <div key={q.id} className="bg-[#1a1d27] rounded-lg p-4">
+                            <p className="text-gray-400 text-xs font-medium mb-2">Frage {qi + 1}: {q.question}</p>
+                            <p className="text-white text-sm leading-relaxed whitespace-pre-wrap">
+                              {s.written_answers?.[q.id]
+                                ? s.written_answers[q.id]
+                                : <span className="text-gray-500 italic">Keine Antwort gegeben</span>
+                              }
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -629,7 +650,9 @@ export default function ExamsPage() {
           Neue Prüfung
         </button>
       </div>
+
       {msg && <div className={`rounded-xl px-4 py-3 text-sm font-medium border ${msg.ok ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>{msg.text}</div>}
+
       {DEPARTMENTS.map(dept => {
         const deptExams = visibleExams.filter(e => e.department === dept.key);
         if (deptExams.length === 0) return null;
@@ -666,6 +689,7 @@ export default function ExamsPage() {
           </div>
         );
       })}
+
       {visibleExams.length === 0 && (
         <div className="text-center py-12 bg-[#1a1d27] border border-white/10 rounded-xl">
           <p className="text-4xl mb-3">📋</p>
