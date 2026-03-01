@@ -39,22 +39,46 @@ export default function PruefungPage({ params }: { params: Promise<{ token: stri
   const [error, setError]         = useState('');
   const saveTimer = useRef<any>(null);
 
-  useEffect(() => {
+useEffect(() => {
     async function load() {
       const { data: s, error: sErr } = await supabase
-        .from('exam_sessions').select('*').eq('token', token).single();
-      if (sErr || !s) { setError('Prüfungslink ungültig oder abgelaufen.'); setLoading(false); return; }
-      if (s.written_submitted_at) { setSubmitted(true); setLoading(false); return; }
-      const { data: e } = await supabase.from('exams').select('*').eq('id', s.exam_id).single();
-      const { data: q } = await supabase.from('exam_written_questions')
-        .select('id, question, type, options, correct_answer, section, order_index')
-        .eq('exam_id', s.exam_id).order('order_index');
+        .from('exam_sessions')
+        .select('*')
+        .eq('token', token)
+        .single();
+
+      if (sErr || !s) {
+        setError('Prüfungslink ungültig oder abgelaufen.');
+        setLoading(false);
+        return;
+      }
+
+      if (s.written_submitted_at) {
+        setSubmitted(true);
+        setLoading(false);
+        return;
+      }
+
+      const { data: e } = await supabase
+        .from('exams')
+        .select('*')
+        .eq('id', s.exam_id)
+        .single();
+
+      const { data: q } = await supabase
+        .from('exam_written_questions')
+        .select('*')
+        .eq('exam_id', s.exam_id)
+        .order('order_index');
+
       setSession(s);
-      setExam(e);
+      setExam(e || null);
       setQuestions(q || []);
+
       if (s.written_answers && Object.keys(s.written_answers).length > 0) {
         setAnswers(s.written_answers);
       }
+
       setLoading(false);
     }
     load();

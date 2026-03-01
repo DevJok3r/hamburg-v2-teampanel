@@ -254,56 +254,61 @@ export default function ExamsPage() {
     setView('edit');
   }
 
-  async function saveExam(isEdit: boolean) {
+async function saveExam(isEdit: boolean) {
     if (!form.title.trim()) return;
     setSaving(true);
 
+    let examId: string;
+
     if (isEdit && selectedExam) {
-      const examId = selectedExam.id;
-      await supabase.from('exams').update({ title: form.title, description: form.description || null, department: form.department }).eq('id', examId);
+      examId = selectedExam.id;
+      const { error: updateErr } = await supabase.from('exams').update({
+        title: form.title,
+        description: form.description || null,
+        department: form.department,
+      }).eq('id', examId);
+      if (updateErr) { showMsg('❌ Fehler: ' + updateErr.message, false); setSaving(false); return; }
       await supabase.from('exam_written_questions').delete().eq('exam_id', examId);
       await supabase.from('exam_oral_questions').delete().eq('exam_id', examId);
-      const wqs = writtenForm.filter(q => q.question.trim());
-      if (wqs.length > 0) {
-        await supabase.from('exam_written_questions').insert(
-          wqs.map((q, i) => ({ exam_id: examId, question: q.question, type: q.type, options: q.options, correct_answer: q.correct_answer, section: q.section || null, order_index: i }))
-        );
-      }
-      const oqs = oralForm.filter(q => q.question.trim());
-      if (oqs.length > 0) {
-        await supabase.from('exam_oral_questions').insert(
-          oqs.map((q, i) => ({ exam_id: examId, question: q.question, sample_answer: q.sample_answer || null, order_index: i }))
-        );
-      }
-      showMsg('✅ Prüfung aktualisiert!');
     } else {
-      const { data: exam, error } = await supabase.from('exams').insert({
-        title: form.title, description: form.description || null,
-        department: form.department, created_by: myId,
-      }).select('id').single();
-
-      if (!exam || error) {
-        showMsg('❌ Fehler beim Erstellen.', false);
-        setSaving(false);
-        return;
-      }
-
-      const examId = exam.id;
-      const wqs = writtenForm.filter(q => q.question.trim());
-      if (wqs.length > 0) {
-        await supabase.from('exam_written_questions').insert(
-          wqs.map((q, i) => ({ exam_id: examId, question: q.question, type: q.type, options: q.options, correct_answer: q.correct_answer, section: q.section || null, order_index: i }))
-        );
-      }
-      const oqs = oralForm.filter(q => q.question.trim());
-      if (oqs.length > 0) {
-        await supabase.from('exam_oral_questions').insert(
-          oqs.map((q, i) => ({ exam_id: examId, question: q.question, sample_answer: q.sample_answer || null, order_index: i }))
-        );
-      }
-      showMsg('✅ Prüfung erstellt!');
+      const { data: newExam, error: createErr } = await supabase
+        .from('exams')
+        .insert({ title: form.title, description: form.description || null, department: form.department, created_by: myId })
+        .select('id')
+        .single();
+      if (createErr || !newExam) { showMsg('❌ Fehler: ' + (createErr?.message || 'Unbekannt'), false); setSaving(false); return; }
+      examId = newExam.id;
     }
 
+    const wqs = writtenForm.filter(q => q.question.trim());
+    if (wqs.length > 0) {
+      const { error: wErr } = await supabase.from('exam_written_questions').insert(
+        wqs.map((q, i) => ({
+          exam_id: examId,
+          question: q.question,
+          type: q.type,
+          options: q.options,
+          correct_answer: q.correct_answer,
+          section: q.section || null,
+          order_index: i,
+        }))
+      );
+      if (wErr) { showMsg('❌ Fehler beim Speichern der Fragen: ' + wErr.message, false); setSaving(false); return; }
+    }
+
+    const oqs = oralForm.filter(q => q.question.trim());
+    if (oqs.length > 0) {
+      await supabase.from('exam_oral_questions').insert(
+        oqs.map((q, i) => ({
+          exam_id: examId,
+          question: q.question,
+          sample_answer: q.sample_answer || null,
+          order_index: i,
+        }))
+      );
+    }
+
+    showMsg(isEdit ? '✅ Prüfung aktualisiert!' : '✅ Prüfung erstellt!');
     await loadExams();
     setView('list');
     setSaving(false);
