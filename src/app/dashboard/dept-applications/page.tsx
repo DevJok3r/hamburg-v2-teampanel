@@ -136,9 +136,17 @@ export default function DeptApplicationsPage() {
     setMyRole(role);
 
     // Meine Zugriffsrechte laden
-    if (role !== 'top_management') {
-      const { data: access } = await supabase.from('application_access').select('department').eq('user_id', user.id);
-      setMyAccess((access || []).map((a: any) => a.department));
+if (role !== 'top_management') {
+      const { data: profile2 } = await supabase.from('profiles').select('departments').eq('id', user.id).single();
+      const depts: string[] = profile2?.departments || [];
+      // Mapping von Profil-Abteilungen zu Bewerbungs-Abteilungen
+      const deptMap: Record<string, string> = {
+        moderation_team:  'moderation',
+        development_team: 'development',
+        content_team:     'social_media',
+        event_team:       'event',
+      };
+      setMyAccess(depts.map(d => deptMap[d]).filter(Boolean));
     }
 
     const { data } = await supabase.from('department_applications').select('*').order('created_at', { ascending: false });
@@ -186,8 +194,9 @@ export default function DeptApplicationsPage() {
     load();
   }
 
-  function canSeeDept(dept: string): boolean {
+function canSeeDept(dept: string): boolean {
     if (myRole === 'top_management') return true;
+    if (!['top_management', 'management', 'junior_management'].includes(myRole || '')) return false;
     return myAccess.includes(dept);
   }
 
