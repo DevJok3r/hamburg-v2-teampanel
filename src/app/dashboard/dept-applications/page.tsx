@@ -114,7 +114,7 @@ export default function DeptApplicationsPage() {
   const [selectedApp, setSelectedApp]     = useState<DeptApplication | null>(null);
   const [reviewNote, setReviewNote]       = useState('');
   const [filterDept, setFilterDept]       = useState<string>('all');
-  const [filterStatus, setFilterStatus]   = useState<string>('pending');
+  const [filterStatus, setFilterStatus]   = useState<string>('all');
   const [activeTab, setActiveTab]         = useState<'applications' | 'access'>('applications');
   const [accessList, setAccessList]       = useState<AccessEntry[]>([]);
   const [allMembers, setAllMembers]       = useState<Profile[]>([]);
