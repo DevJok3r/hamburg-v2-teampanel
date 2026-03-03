@@ -10,7 +10,7 @@ const CATEGORIES = [
     icon: '📋',
     description: 'Wähle diese Kategorie wenn du Trial bist und bereit für deine Prüfung bist. Dein Antrag wird vom Management geprüft und anschließend beim Top Management zur Genehmigung eingereicht.',
     requiresExam: true,
-    topManagementOnly: true,
+    requiresDate: true,
   },
   {
     key: 'befoerderung',
@@ -18,7 +18,7 @@ const CATEGORIES = [
     icon: '⬆️',
     description: 'Wähle diese Kategorie wenn du das Gefühl hast eine Beförderung verdient zu haben. Begründe deinen Antrag ausführlich.',
     requiresExam: false,
-    topManagementOnly: false,
+    requiresDate: false,
   },
   {
     key: 'abmahnung',
@@ -26,7 +26,7 @@ const CATEGORIES = [
     icon: '⚠️',
     description: 'Wähle diese Kategorie wenn du einen Regelverstoß eines Teammitglieds melden möchtest. Beschreibe den Vorfall so detailliert wie möglich.',
     requiresExam: false,
-    topManagementOnly: false,
+    requiresDate: false,
   },
   {
     key: 'urlaub',
@@ -34,7 +34,7 @@ const CATEGORIES = [
     icon: '🏖️',
     description: 'Wähle diese Kategorie wenn du eine längere Abwesenheit planst und diese offiziell beantragen möchtest.',
     requiresExam: false,
-    topManagementOnly: false,
+    requiresDate: true,
   },
   {
     key: 'regelaenderung',
@@ -42,7 +42,7 @@ const CATEGORIES = [
     icon: '📜',
     description: 'Wähle diese Kategorie wenn du eine Änderung einer bestehenden Regel vorschlagen möchtest. Begründe deinen Vorschlag ausführlich.',
     requiresExam: false,
-    topManagementOnly: false,
+    requiresDate: false,
   },
   {
     key: 'ressource',
@@ -50,7 +50,7 @@ const CATEGORIES = [
     icon: '🔧',
     description: 'Wähle diese Kategorie wenn du Zugang zu Tools, Systemen oder anderen Ressourcen benötigst.',
     requiresExam: false,
-    topManagementOnly: false,
+    requiresDate: false,
   },
   {
     key: 'sonstiges',
@@ -58,7 +58,7 @@ const CATEGORIES = [
     icon: '📝',
     description: 'Wähle diese Kategorie für allgemeine Anträge oder Anfragen die in keine andere Kategorie passen.',
     requiresExam: false,
-    topManagementOnly: false,
+    requiresDate: false,
   },
 ];
 
@@ -70,11 +70,11 @@ const PRIORITIES = [
 ];
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
-  pending:            { label: 'Ausstehend',              color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30', icon: '⏳' },
-  management_review:  { label: 'Management prüft',        color: 'text-purple-400 bg-purple-500/10 border-purple-500/30', icon: '🔍' },
-  forwarded:          { label: 'Weitergeleitet an Top Mg.', color: 'text-blue-400 bg-blue-500/10 border-blue-500/30',    icon: '📨' },
-  approved:           { label: 'Genehmigt',               color: 'text-green-400 bg-green-500/10 border-green-500/30',   icon: '✅' },
-  rejected:           { label: 'Abgelehnt',               color: 'text-red-400 bg-red-500/10 border-red-500/30',         icon: '❌' },
+  pending:           { label: 'Ausstehend',               color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30', icon: '⏳' },
+  management_review: { label: 'Management prüft',         color: 'text-purple-400 bg-purple-500/10 border-purple-500/30', icon: '🔍' },
+  forwarded:         { label: 'Weitergeleitet an Top Mg.', color: 'text-blue-400 bg-blue-500/10 border-blue-500/30',      icon: '📨' },
+  approved:          { label: 'Genehmigt',                color: 'text-green-400 bg-green-500/10 border-green-500/30',    icon: '✅' },
+  rejected:          { label: 'Abgelehnt',                color: 'text-red-400 bg-red-500/10 border-red-500/30',          icon: '❌' },
 };
 
 const ROLE_LEVEL: Record<string, number> = {
@@ -96,7 +96,7 @@ export default function RequestsPage() {
   const [loading, setLoading]   = useState(true);
   const [tab, setTab]           = useState<TabType>('all');
   const [msg, setMsg]           = useState<{ text: string; ok: boolean } | null>(null);
-  const [showCreate, setShowCreate]       = useState(false);
+  const [showCreate, setShowCreate]           = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
 
   // Form
@@ -105,16 +105,25 @@ export default function RequestsPage() {
   const [fDesc, setFDesc]         = useState('');
   const [fPriority, setFPriority] = useState('normal');
   const [fExam, setFExam]         = useState('');
+  const [fDate, setFDate]         = useState('');
   const [saving, setSaving]       = useState(false);
 
   // Review
   const [reviewResponse, setReviewResponse] = useState('');
+  const [internalNote, setInternalNote]     = useState('');
+  const [savingNote, setSavingNote]         = useState(false);
 
   const supabase = createClientSupabaseClient();
 
   function showMsg(text: string, ok = true) {
     setMsg({ text, ok });
     setTimeout(() => setMsg(null), 4000);
+  }
+
+  function closeDetail() {
+    setSelectedRequest(null);
+    setReviewResponse('');
+    setInternalNote('');
   }
 
   async function load() {
@@ -140,47 +149,45 @@ export default function RequestsPage() {
 
   useEffect(() => { load(); }, []);
 
-  const roleLevel  = ROLE_LEVEL[myRole] || 0;
-  const isManager  = roleLevel >= 80;
-  const isTopMgmt  = myRole === 'top_management';
+  const roleLevel = ROLE_LEVEL[myRole] || 0;
+  const isManager = roleLevel >= 80;
+  const isTopMgmt = myRole === 'top_management';
 
-  // Prüfungen die der User sehen darf (eigene Abteilung)
-  const myExams = exams.filter(e => myDepts.includes(e.department));
-
+  const myExams          = exams.filter(e => myDepts.includes(e.department));
   const selectedCategory = CATEGORIES.find(c => c.key === fCategory);
 
   async function submitRequest() {
     if (!fTitle.trim()) return;
     if (selectedCategory?.requiresExam && !fExam) return;
+    if (selectedCategory?.requiresDate && !fDate) return;
     setSaving(true);
 
     const metadata: any = {};
     if (fExam) metadata.exam_id = fExam;
 
     const { error } = await supabase.from('requests').insert({
-      category:     fCategory,
-      title:        fTitle,
-      description:  fDesc || null,
-      priority:     fPriority,
-      requested_by: myId,
+      category:       fCategory,
+      title:          fTitle,
+      description:    fDesc || null,
+      priority:       fPriority,
+      requested_by:   myId,
       metadata,
+      preferred_date: fDate || null,
     });
 
     if (error) { showMsg('❌ ' + error.message, false); }
     else {
       showMsg('✅ Antrag erfolgreich gestellt!');
       setShowCreate(false);
-      setFTitle(''); setFDesc(''); setFExam(''); setFPriority('normal'); setFCategory('pruefung');
+      setFTitle(''); setFDesc(''); setFExam(''); setFPriority('normal'); setFCategory('pruefung'); setFDate('');
       await loadRequests();
     }
     setSaving(false);
   }
 
-  // Junior Management genehmigt/lehnt ab → bei Prüfung wird weitergeleitet
   async function managerReview(id: string, action: 'approve' | 'reject') {
     setSaving(true);
     const req = requests.find(r => r.id === id);
-
     if (action === 'reject') {
       await supabase.from('requests').update({
         status: 'rejected', response: reviewResponse || null,
@@ -188,7 +195,6 @@ export default function RequestsPage() {
       }).eq('id', id);
       showMsg('❌ Antrag abgelehnt.');
     } else {
-      // Prüfungsanträge werden an Top Management weitergeleitet
       if (req?.category === 'pruefung') {
         await supabase.from('requests').update({
           status: 'forwarded', response: reviewResponse || null,
@@ -203,29 +209,23 @@ export default function RequestsPage() {
         showMsg('✅ Antrag genehmigt!');
       }
     }
-
-    setSelectedRequest(null);
-    setReviewResponse('');
+    closeDetail();
     await loadRequests();
     setSaving(false);
   }
 
-  // Top Management genehmigt Prüfungsanordnung → Link generieren
   async function topManagementApprove(id: string) {
     setSaving(true);
     const req = requests.find(r => r.id === id);
     if (!req) { setSaving(false); return; }
 
-    const examId     = req.metadata?.exam_id;
+    const examId      = req.metadata?.exam_id;
     const candidateId = req.requested_by;
 
     if (examId && candidateId) {
       const { data: session } = await supabase.from('exam_sessions').insert({
-        exam_id:      examId,
-        candidate_id: candidateId,
-        examiner_id:  myId,
+        exam_id: examId, candidate_id: candidateId, examiner_id: myId,
       }).select().single();
-
       if (session) {
         const link = `${window.location.origin}/pruefung/${(session as any).token}`;
         await navigator.clipboard.writeText(link);
@@ -240,8 +240,7 @@ export default function RequestsPage() {
       reviewed_by: myId, reviewed_at: new Date().toISOString(),
     }).eq('id', id);
 
-    setSelectedRequest(null);
-    setReviewResponse('');
+    closeDetail();
     await loadRequests();
     setSaving(false);
   }
@@ -253,19 +252,27 @@ export default function RequestsPage() {
       reviewed_by: myId, reviewed_at: new Date().toISOString(),
     }).eq('id', id);
     showMsg('❌ Anordnung abgelehnt.');
-    setSelectedRequest(null);
-    setReviewResponse('');
+    closeDetail();
     await loadRequests();
     setSaving(false);
   }
+
   async function deleteRequest(id: string) {
     if (!confirm('Antrag wirklich löschen?')) return;
     setSaving(true);
     await supabase.from('requests').delete().eq('id', id);
     setRequests(p => p.filter(r => r.id !== id));
-    setSelectedRequest(null);
+    closeDetail();
     showMsg('✅ Antrag gelöscht.');
     setSaving(false);
+  }
+
+  async function saveInternalNote(id: string) {
+    setSavingNote(true);
+    await supabase.from('requests').update({ internal_notes: internalNote }).eq('id', id);
+    setRequests(p => p.map(r => r.id === id ? { ...r, internal_notes: internalNote } : r));
+    showMsg('✅ Notiz gespeichert.');
+    setSavingNote(false);
   }
 
   if (loading) return <div className="text-gray-400 text-center py-12">Lade...</div>;
@@ -283,6 +290,7 @@ export default function RequestsPage() {
 
   return (
     <div className="max-w-4xl space-y-6">
+
       {/* HEADER */}
       <div className="flex items-center justify-between">
         <div>
@@ -298,7 +306,11 @@ export default function RequestsPage() {
         </button>
       </div>
 
-      {msg && <div className={`rounded-xl px-4 py-3 text-sm font-medium border ${msg.ok ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>{msg.text}</div>}
+      {msg && (
+        <div className={`rounded-xl px-4 py-3 text-sm font-medium border ${msg.ok ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>
+          {msg.text}
+        </div>
+      )}
 
       {/* TABS */}
       <div className="flex gap-1 bg-[#1a1d27] border border-white/10 rounded-xl p-1 overflow-x-auto">
@@ -335,9 +347,8 @@ export default function RequestsPage() {
           const prio     = PRIORITIES.find(p => p.key === r.priority);
           const statusCf = STATUS_CONFIG[r.status] || STATUS_CONFIG.pending;
           const isOwn    = r.requested_by === myId;
-
           return (
-            <div key={r.id} onClick={() => setSelectedRequest(r)}
+            <div key={r.id} onClick={() => { setSelectedRequest(r); setInternalNote(r.internal_notes || ''); }}
               className="bg-[#1a1d27] border border-white/10 hover:border-white/20 rounded-xl p-5 cursor-pointer transition">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -352,7 +363,8 @@ export default function RequestsPage() {
                     <div className="flex items-center gap-3 mt-2 flex-wrap">
                       <span className="text-gray-500 text-xs">Von: <span className="text-purple-400">{r.requester?.username}</span></span>
                       <span className="text-gray-500 text-xs">{new Date(r.created_at).toLocaleDateString('de-DE')}</span>
-                      {r.reviewer && <span className="text-gray-500 text-xs">Bearbeitet von: <span className="text-blue-400">{r.reviewer?.username}</span></span>}
+                      {r.preferred_date && <span className="text-gray-500 text-xs">📅 {new Date(r.preferred_date).toLocaleDateString('de-DE')}</span>}
+                      {r.reviewer && <span className="text-gray-500 text-xs">Bearb.: <span className="text-blue-400">{r.reviewer?.username}</span></span>}
                     </div>
                   </div>
                 </div>
@@ -383,7 +395,7 @@ export default function RequestsPage() {
                 <label className="text-gray-400 text-xs mb-2 block font-medium">Kategorie wählen</label>
                 <div className="grid grid-cols-2 gap-2">
                   {CATEGORIES.map(c => (
-                    <button key={c.key} onClick={() => { setFCategory(c.key); setFExam(''); }}
+                    <button key={c.key} onClick={() => { setFCategory(c.key); setFExam(''); setFDate(''); }}
                       className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-left transition ${fCategory === c.key ? 'bg-blue-500/20 border-blue-500/50 text-white' : 'bg-[#0f1117] border-white/10 text-gray-400 hover:bg-white/5 hover:border-white/20'}`}>
                       <span>{c.icon}</span>
                       <span className="text-xs font-medium leading-tight">{c.label}</span>
@@ -392,7 +404,7 @@ export default function RequestsPage() {
                 </div>
               </div>
 
-              {/* Beschreibung der Kategorie */}
+              {/* Kategoriebeschreibung */}
               {selectedCategory && (
                 <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg px-4 py-3">
                   <p className="text-blue-300 text-xs leading-relaxed">{selectedCategory.description}</p>
@@ -405,7 +417,7 @@ export default function RequestsPage() {
                   <label className="text-gray-400 text-xs mb-1 block">Prüfung auswählen</label>
                   {myExams.length === 0 ? (
                     <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
-                      <p className="text-red-400 text-xs">Keine Prüfungen für deine Abteilung verfügbar. Wende dich an das Management.</p>
+                      <p className="text-red-400 text-xs">Keine Prüfungen für deine Abteilung verfügbar.</p>
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -419,6 +431,18 @@ export default function RequestsPage() {
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Datum */}
+              {selectedCategory?.requiresDate && (
+                <div>
+                  <label className="text-gray-400 text-xs mb-1 block">
+                    {fCategory === 'pruefung' ? '📅 Gewünschtes Prüfungsdatum' : '📅 Datum'}
+                  </label>
+                  <input type="date" value={fDate} onChange={e => setFDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500" />
                 </div>
               )}
 
@@ -454,7 +478,7 @@ export default function RequestsPage() {
               <div className="flex gap-2 pt-2">
                 <button onClick={() => setShowCreate(false)} className="bg-white/5 hover:bg-white/10 text-gray-300 px-4 py-2.5 rounded-lg text-sm transition">Abbrechen</button>
                 <button onClick={submitRequest}
-                  disabled={saving || !fTitle.trim() || (fCategory === 'pruefung' && !fExam)}
+                  disabled={saving || !fTitle.trim() || (selectedCategory?.requiresExam ? !fExam : false) || (selectedCategory?.requiresDate ? !fDate : false)}
                   className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-medium py-2.5 rounded-lg text-sm transition">
                   {saving ? 'Wird gestellt...' : '📤 Antrag stellen'}
                 </button>
@@ -471,16 +495,9 @@ export default function RequestsPage() {
         const prio     = PRIORITIES.find(p => p.key === r.priority);
         const statusCf = STATUS_CONFIG[r.status] || STATUS_CONFIG.pending;
         const isOwn    = r.requested_by === myId;
-
-        // Wer darf was:
-        // Junior Management+ kann pending Anträge bearbeiten (außer eigene)
-        // Top Management kann forwarded Prüfungsanträge final genehmigen
         const canManagerReview = isManager && !isOwn && r.status === 'pending';
         const canTopReview     = isTopMgmt && r.status === 'forwarded' && r.category === 'pruefung';
-
-        const examTitle = r.metadata?.exam_id
-          ? exams.find(e => e.id === r.metadata.exam_id)?.title
-          : null;
+        const examTitle        = r.metadata?.exam_id ? exams.find(e => e.id === r.metadata.exam_id)?.title : null;
 
         return (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -493,10 +510,11 @@ export default function RequestsPage() {
                     <p className="text-gray-400 text-xs">{cat?.label}</p>
                   </div>
                 </div>
-                <button onClick={() => { setSelectedRequest(null); setReviewResponse(''); }} className="text-gray-400 hover:text-white transition text-xl">✕</button>
+                <button onClick={closeDetail} className="text-gray-400 hover:text-white transition text-xl">✕</button>
               </div>
 
               <div className="p-6 space-y-4">
+
                 {/* Info Grid */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-[#0f1117] rounded-lg p-3">
@@ -519,6 +537,16 @@ export default function RequestsPage() {
                   </div>
                 </div>
 
+                {/* Gewünschtes Datum */}
+                {r.preferred_date && (
+                  <div className="bg-[#0f1117] rounded-lg p-3">
+                    <p className="text-gray-500 text-xs mb-1">
+                      {r.category === 'pruefung' ? '📅 Gewünschtes Prüfungsdatum' : '📅 Datum'}
+                    </p>
+                    <p className="text-white text-sm font-medium">{new Date(r.preferred_date).toLocaleDateString('de-DE')}</p>
+                  </div>
+                )}
+
                 {/* Prüfung */}
                 {examTitle && (
                   <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
@@ -535,7 +563,7 @@ export default function RequestsPage() {
                   </div>
                 )}
 
-                {/* Reviewer Info */}
+                {/* Reviewer */}
                 {r.reviewer && (
                   <div className="bg-[#0f1117] rounded-lg p-3">
                     <p className="text-gray-500 text-xs mb-1">Bearbeitet von</p>
@@ -556,7 +584,26 @@ export default function RequestsPage() {
                 {/* Status Info für Antragsteller */}
                 {isOwn && r.status === 'forwarded' && (
                   <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
-                    <p className="text-yellow-400 text-xs">📨 Dein Antrag wurde vom Management geprüft und an das Top Management weitergeleitet. Du wirst benachrichtigt sobald eine Entscheidung getroffen wurde.</p>
+                    <p className="text-yellow-400 text-xs">📨 Dein Antrag wurde vom Management geprüft und an das Top Management weitergeleitet.</p>
+                  </div>
+                )}
+
+                {/* INTERNE NOTIZEN - nur für Manager */}
+                {isManager && !isOwn && (
+                  <div className="border-t border-white/10 pt-4 space-y-2">
+                    <p className="text-white text-sm font-medium">
+                      🔒 Interne Notizen
+                      <span className="text-gray-500 text-xs font-normal ml-2">(nur für Management sichtbar)</span>
+                    </p>
+                    <textarea
+                      value={internalNote}
+                      onChange={e => setInternalNote(e.target.value)}
+                      placeholder="Interne Notizen zum Antrag..." rows={3}
+                      className="w-full bg-[#0f1117] border border-yellow-500/20 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-yellow-500 resize-none" />
+                    <button onClick={() => saveInternalNote(r.id)} disabled={savingNote}
+                      className="bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 font-medium px-4 py-2 rounded-lg text-xs transition disabled:opacity-40">
+                      {savingNote ? 'Speichern...' : '💾 Notiz speichern'}
+                    </button>
                   </div>
                 )}
 
@@ -564,7 +611,7 @@ export default function RequestsPage() {
                 {canManagerReview && (
                   <div className="border-t border-white/10 pt-4 space-y-3">
                     <p className="text-white text-sm font-medium">
-                      {r.category === 'pruefung' ? '📋 Antrag prüfen → bei Genehmigung wird an Top Management weitergeleitet' : '📋 Antrag bearbeiten'}
+                      {r.category === 'pruefung' ? '📋 Bei Genehmigung → wird an Top Management weitergeleitet' : '📋 Antrag bearbeiten'}
                     </p>
                     <textarea value={reviewResponse} onChange={e => setReviewResponse(e.target.value)}
                       placeholder="Antwort / Begründung (optional)..." rows={2}
@@ -581,21 +628,12 @@ export default function RequestsPage() {
                     </div>
                   </div>
                 )}
-                {/* TOP MANAGEMENT DELETE */}
-                {isTopMgmt && (r.status === 'approved' || r.status === 'rejected') && (
-                  <div className="border-t border-white/10 pt-4">
-                    <button onClick={() => deleteRequest(r.id)} disabled={saving}
-                      className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 font-medium py-2.5 rounded-lg text-sm transition disabled:opacity-40">
-                      🗑️ Antrag löschen
-                    </button>
-                  </div>
-                )}
 
                 {/* TOP MANAGEMENT FINAL REVIEW */}
                 {canTopReview && (
                   <div className="border-t border-white/10 pt-4 space-y-3">
                     <p className="text-white text-sm font-medium">🎓 Prüfungsanordnung final genehmigen</p>
-                    <p className="text-gray-400 text-xs">Bei Genehmigung wird automatisch ein Prüfungslink generiert und in die Zwischenablage kopiert.</p>
+                    <p className="text-gray-400 text-xs">Bei Genehmigung wird automatisch ein Prüfungslink generiert und kopiert.</p>
                     <textarea value={reviewResponse} onChange={e => setReviewResponse(e.target.value)}
                       placeholder="Antwort / Begründung (optional)..." rows={2}
                       className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
@@ -611,6 +649,17 @@ export default function RequestsPage() {
                     </div>
                   </div>
                 )}
+
+                {/* TOP MANAGEMENT DELETE */}
+                {isTopMgmt && (r.status === 'approved' || r.status === 'rejected') && (
+                  <div className="border-t border-white/10 pt-4">
+                    <button onClick={() => deleteRequest(r.id)} disabled={saving}
+                      className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 font-medium py-2.5 rounded-lg text-sm transition disabled:opacity-40">
+                      🗑️ Antrag löschen
+                    </button>
+                  </div>
+                )}
+
               </div>
             </div>
           </div>
