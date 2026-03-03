@@ -70,11 +70,11 @@ const PRIORITIES = [
 ];
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
-  pending:           { label: 'Ausstehend',               color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30', icon: '⏳' },
-  management_review: { label: 'Management prüft',         color: 'text-purple-400 bg-purple-500/10 border-purple-500/30', icon: '🔍' },
-  forwarded:         { label: 'Weitergeleitet an Top Mg.', color: 'text-blue-400 bg-blue-500/10 border-blue-500/30',      icon: '📨' },
-  approved:          { label: 'Genehmigt',                color: 'text-green-400 bg-green-500/10 border-green-500/30',    icon: '✅' },
-  rejected:          { label: 'Abgelehnt',                color: 'text-red-400 bg-red-500/10 border-red-500/30',          icon: '❌' },
+  pending:           { label: 'Ausstehend',                color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30', icon: '⏳' },
+  management_review: { label: 'Management prüft',          color: 'text-purple-400 bg-purple-500/10 border-purple-500/30', icon: '🔍' },
+  forwarded:         { label: 'Weitergeleitet an Top Mg.', color: 'text-blue-400 bg-blue-500/10 border-blue-500/30',       icon: '📨' },
+  approved:          { label: 'Genehmigt',                 color: 'text-green-400 bg-green-500/10 border-green-500/30',    icon: '✅' },
+  rejected:          { label: 'Abgelehnt',                 color: 'text-red-400 bg-red-500/10 border-red-500/30',          icon: '❌' },
 };
 
 const ROLE_LEVEL: Record<string, number> = {
@@ -110,8 +110,6 @@ export default function RequestsPage() {
 
   // Review
   const [reviewResponse, setReviewResponse] = useState('');
-  const [internalNote, setInternalNote]     = useState('');
-  const [savingNote, setSavingNote]         = useState(false);
 
   const supabase = createClientSupabaseClient();
 
@@ -123,7 +121,6 @@ export default function RequestsPage() {
   function closeDetail() {
     setSelectedRequest(null);
     setReviewResponse('');
-    setInternalNote('');
   }
 
   async function load() {
@@ -267,14 +264,6 @@ export default function RequestsPage() {
     setSaving(false);
   }
 
-  async function saveInternalNote(id: string) {
-    setSavingNote(true);
-    await supabase.from('requests').update({ internal_notes: internalNote }).eq('id', id);
-    setRequests(p => p.map(r => r.id === id ? { ...r, internal_notes: internalNote } : r));
-    showMsg('✅ Notiz gespeichert.');
-    setSavingNote(false);
-  }
-
   if (loading) return <div className="text-gray-400 text-center py-12">Lade...</div>;
 
   const filteredRequests = requests.filter(r => {
@@ -348,7 +337,7 @@ export default function RequestsPage() {
           const statusCf = STATUS_CONFIG[r.status] || STATUS_CONFIG.pending;
           const isOwn    = r.requested_by === myId;
           return (
-            <div key={r.id} onClick={() => { setSelectedRequest(r); setInternalNote(r.internal_notes || ''); }}
+            <div key={r.id} onClick={() => setSelectedRequest(r)}
               className="bg-[#1a1d27] border border-white/10 hover:border-white/20 rounded-xl p-5 cursor-pointer transition">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -585,25 +574,6 @@ export default function RequestsPage() {
                 {isOwn && r.status === 'forwarded' && (
                   <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
                     <p className="text-yellow-400 text-xs">📨 Dein Antrag wurde vom Management geprüft und an das Top Management weitergeleitet.</p>
-                  </div>
-                )}
-
-                {/* INTERNE NOTIZEN - nur für Manager */}
-                {isManager && !isOwn && (
-                  <div className="border-t border-white/10 pt-4 space-y-2">
-                    <p className="text-white text-sm font-medium">
-                      🔒 Interne Notizen
-                      <span className="text-gray-500 text-xs font-normal ml-2">(nur für Management sichtbar)</span>
-                    </p>
-                    <textarea
-                      value={internalNote}
-                      onChange={e => setInternalNote(e.target.value)}
-                      placeholder="Interne Notizen zum Antrag..." rows={3}
-                      className="w-full bg-[#0f1117] border border-yellow-500/20 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-yellow-500 resize-none" />
-                    <button onClick={() => saveInternalNote(r.id)} disabled={savingNote}
-                      className="bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 font-medium px-4 py-2 rounded-lg text-xs transition disabled:opacity-40">
-                      {savingNote ? 'Speichern...' : '💾 Notiz speichern'}
-                    </button>
                   </div>
                 )}
 
