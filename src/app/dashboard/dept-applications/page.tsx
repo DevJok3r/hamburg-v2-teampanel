@@ -208,22 +208,34 @@ function canSeeDept(dept: string): boolean {
 
   const BASE_URL = typeof window !== 'undefined' ? window.location.origin : '';
 
-  function renderAnswers(app: DeptApplication) {
-    if (!app.extra_q1) return null;
-    try {
-      const answers = JSON.parse(app.extra_q1);
-      const labels = FIELD_LABELS[app.department] || {};
-      return Object.entries(answers).map(([key, val]) => {
-        if (!val || String(val).trim() === '') return null;
-        const label = labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-        return (
-          <div key={key} className="bg-[#0f1117] rounded-lg p-4">
-            <p className="text-gray-400 text-xs font-medium mb-1">{label}</p>
-            <p className="text-gray-300 text-sm whitespace-pre-wrap">{String(val)}</p>
-          </div>
-        );
-      });
-    } catch { return null; }
+function renderAnswers(app: DeptApplication) {
+    const labels = FIELD_LABELS[app.department] || {};
+    let answers: Record<string, any> = {};
+
+    if (app.extra_q1) {
+      try { answers = JSON.parse(app.extra_q1); } catch { return null; }
+    } else {
+      answers = {
+        ingame_name: app.ingame_name,
+        discord_tag: app.discord_tag,
+        age: app.age,
+        timezone: app.timezone,
+        availability: app.availability,
+        experience: app.experience,
+        motivation: app.motivation,
+      };
+    }
+
+    return Object.entries(answers).map(([key, val]) => {
+      if (!val || String(val).trim() === '') return null;
+      const label = labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      return (
+        <div key={key} className="bg-[#0f1117] rounded-lg p-4">
+          <p className="text-gray-400 text-xs font-medium mb-1">{label}</p>
+          <p className="text-gray-300 text-sm whitespace-pre-wrap">{String(val)}</p>
+        </div>
+      );
+    });
   }
 
   if (loading) return <div className="text-gray-400 text-center py-12">Lade...</div>;
