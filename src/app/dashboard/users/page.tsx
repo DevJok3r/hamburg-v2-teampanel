@@ -34,13 +34,15 @@ export default function UsersPage() {
 
   const supabase = createClientSupabaseClient();
   const isTopManagement = myRole === 'top_management';
+  const [myUsername, setMyUsername] = useState('');
+  const isOwner = myUsername === 'jxkerlds';
 
   async function load() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     setMyId(user.id);
-    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-    if (profile) setMyRole(profile.role as UserRole);
+    const { data: profile } = await supabase.from('profiles').select('role, username').eq('id', user.id).single();
+    if (profile) { setMyRole(profile.role as UserRole); setMyUsername(profile.username); }
     const { data } = await supabase.from('profiles').select('*').order('role').order('username');
     setUsers(data || []);
     setLoading(false);
@@ -164,7 +166,7 @@ export default function UsersPage() {
             {modalType === 'role' && (
               <select value={selectedRole} onChange={e => setSelectedRole(e.target.value as UserRole)}
                 className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-500">
-                {allRoles.filter(r => isTopManagement || ROLE_HIERARCHY[r] < ROLE_HIERARCHY[myRole!]).map(r => (
+                {allRoles.filter(r => (isTopManagement || ROLE_HIERARCHY[r] < ROLE_HIERARCHY[myRole!]) && (isOwner || r !== 'top_management')).map(r => (
                   <option key={r} value={r}>{ROLE_LABELS[r]}</option>
                 ))}
               </select>
@@ -306,13 +308,13 @@ export default function UsersPage() {
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex gap-2 flex-wrap">
-                      {can.changeUserRole(myRole, user.role) && user.id !== myId && (
+                      {can.changeUserRole(myRole, user.role) && user.id !== myId && (isOwner || user.role !== 'top_management') && (
                         <button onClick={() => openModal(user, 'role')}
                           className="bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
                           Rolle
                         </button>
                       )}
-                      {isTopManagement && user.id !== myId && (
+                      {isTopManagement && user.id !== myId && (isOwner || user.role !== 'top_management') && (
                         <>
                           <button onClick={() => openModal(user, 'departments')}
                             className="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
