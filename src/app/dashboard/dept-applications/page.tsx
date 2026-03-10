@@ -408,16 +408,18 @@ export default function DeptApplicationsPage() {
       {/* ══════════════════════════════════════════════════════════════════
           TAB: LINKS & PHASEN
       ══════════════════════════════════════════════════════════════════ */}
-      {activeTab === 'links' && (
+{activeTab === 'links' && (
         <div className="space-y-4">
+
+          {/* ── Feste Abteilungen ── */}
           {Object.keys(DEPT_LABELS).filter(d => canSeeDept(d)).map(dept => {
-            const isOpen     = getPhase(dept);
-            const saving     = savingPhase === dept;
-            const deptForms  = forms.filter(f => f.department === dept && f.is_active);
+            const isOpen    = getPhase(dept);
+            const saving    = savingPhase === dept;
+            const deptForms = visibleForms.filter(f => f.department === dept && f.is_active);
 
             return (
               <div key={dept} className={`bg-[#1a1d27] border rounded-xl overflow-hidden ${isOpen ? 'border-white/10' : 'border-red-500/20'}`}>
-                {/* Dept Header */}
+                {/* Header */}
                 <div className="p-5 flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
                     <span className="text-2xl">{DEPT_ICONS[dept]}</span>
@@ -450,17 +452,38 @@ export default function DeptApplicationsPage() {
                     </button>
                   </div>
 
-                  {/* Custom Form Links */}
+                  {/* Custom Form Links dieser Abteilung */}
                   {deptForms.map(f => (
-                    <div key={f.id} className="bg-[#0f1117] rounded-lg p-3 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-xs text-purple-400 flex-shrink-0">📝 {f.title}</span>
-                        <span className="text-gray-600 text-xs font-mono truncate">{BASE_URL}/apply/form/{f.id}</span>
+                    <div key={f.id} className="bg-[#0f1117] rounded-lg p-3">
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-purple-400 text-xs font-medium flex-shrink-0">📝 {f.title}</span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded border flex-shrink-0 ${f.is_active ? 'text-green-400 bg-green-500/10 border-green-500/30' : 'text-gray-400 bg-gray-500/10 border-gray-500/30'}`}>
+                            {f.is_active ? 'Aktiv' : 'Inaktiv'}
+                          </span>
+                        </div>
+                        <div className="flex gap-1.5 flex-shrink-0">
+                          <button onClick={() => toggleFormActive(f)}
+                            className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition ${f.is_active ? 'bg-gray-500/10 hover:bg-gray-500/20 text-gray-400 border-gray-500/30' : 'bg-green-500/10 hover:bg-green-500/20 text-green-400 border-green-500/30'}`}>
+                            {f.is_active ? '🔒 Schließen' : '🔓 Öffnen'}
+                          </button>
+                          <button onClick={() => openFormBuilder(f)}
+                            className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 text-xs px-2.5 py-1 rounded-lg transition">
+                            ✏️
+                          </button>
+                          <button onClick={() => deleteForm(f.id)}
+                            className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs px-2.5 py-1 rounded-lg transition">
+                            🗑️
+                          </button>
+                          <button onClick={() => navigator.clipboard.writeText(`${BASE_URL}/apply/form/${f.id}`)}
+                            className="bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white text-xs px-2.5 py-1 rounded-lg transition">
+                            📋
+                          </button>
+                        </div>
                       </div>
-                      <button onClick={() => navigator.clipboard.writeText(`${BASE_URL}/apply/form/${f.id}`)}
-                        className="bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white text-xs px-3 py-1.5 rounded-lg transition flex-shrink-0">
-                        📋 Kopieren
-                      </button>
+                      <span className="text-gray-600 text-xs font-mono">{BASE_URL}/apply/form/{f.id}</span>
+                      {f.description && <p className="text-gray-500 text-xs mt-1">{f.description}</p>}
+                      <p className="text-gray-600 text-xs mt-1">❓ {f.questions.length} Fragen · 📨 {responses.filter(r => r.form_id === f.id).length} Antworten · {responses.filter(r => r.form_id === f.id && r.status === 'pending').length > 0 && <span className="text-yellow-400">⏳ {responses.filter(r => r.form_id === f.id && r.status === 'pending').length} ausstehend</span>}</p>
                     </div>
                   ))}
 
@@ -471,6 +494,86 @@ export default function DeptApplicationsPage() {
               </div>
             );
           })}
+
+          {/* ── Eigene Kategorien (nicht in DEPT_LABELS) ── */}
+          {(() => {
+            const customCategoryForms = visibleForms.filter(f => !Object.keys(DEPT_LABELS).includes(f.department));
+            if (customCategoryForms.length === 0) return null;
+
+            // Gruppieren nach Kategorie
+            const byCategory: Record<string, CustomForm[]> = {};
+            customCategoryForms.forEach(f => {
+              if (!byCategory[f.department]) byCategory[f.department] = [];
+              byCategory[f.department].push(f);
+            });
+
+            return Object.entries(byCategory).map(([category, catForms]) => (
+              <div key={category} className="bg-[#1a1d27] border border-white/10 rounded-xl overflow-hidden">
+                {/* Header */}
+                <div className="p-5 flex items-center gap-3">
+                  <span className="text-2xl">📋</span>
+                  <div>
+                    <p className="text-white font-semibold">{category}</p>
+                    <span className="text-xs px-2 py-0.5 rounded border text-purple-400 bg-purple-500/10 border-purple-500/30">
+                      Eigene Kategorie
+                    </span>
+                  </div>
+                </div>
+
+                {/* Formulare */}
+                <div className="border-t border-white/10 p-5 space-y-2">
+                  <p className="text-gray-500 text-xs font-medium mb-3">BEWERBUNGSLINKS</p>
+                  {catForms.map(f => (
+                    <div key={f.id} className="bg-[#0f1117] rounded-lg p-3">
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-purple-400 text-xs font-medium flex-shrink-0">📝 {f.title}</span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded border flex-shrink-0 ${f.is_active ? 'text-green-400 bg-green-500/10 border-green-500/30' : 'text-gray-400 bg-gray-500/10 border-gray-500/30'}`}>
+                            {f.is_active ? 'Aktiv' : 'Inaktiv'}
+                          </span>
+                        </div>
+                        <div className="flex gap-1.5 flex-shrink-0">
+                          <button onClick={() => toggleFormActive(f)}
+                            className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition ${f.is_active ? 'bg-gray-500/10 hover:bg-gray-500/20 text-gray-400 border-gray-500/30' : 'bg-green-500/10 hover:bg-green-500/20 text-green-400 border-green-500/30'}`}>
+                            {f.is_active ? '🔒 Schließen' : '🔓 Öffnen'}
+                          </button>
+                          <button onClick={() => openFormBuilder(f)}
+                            className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 text-xs px-2.5 py-1 rounded-lg transition">
+                            ✏️
+                          </button>
+                          <button onClick={() => deleteForm(f.id)}
+                            className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs px-2.5 py-1 rounded-lg transition">
+                            🗑️
+                          </button>
+                          <button onClick={() => navigator.clipboard.writeText(`${BASE_URL}/apply/form/${f.id}`)}
+                            className="bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white text-xs px-2.5 py-1 rounded-lg transition">
+                            📋
+                          </button>
+                        </div>
+                      </div>
+                      <span className="text-gray-600 text-xs font-mono">{BASE_URL}/apply/form/{f.id}</span>
+                      {f.description && <p className="text-gray-500 text-xs mt-1">{f.description}</p>}
+                      <p className="text-gray-600 text-xs mt-1">
+                        ❓ {f.questions.length} Fragen · 📨 {responses.filter(r => r.form_id === f.id).length} Antworten
+                        {responses.filter(r => r.form_id === f.id && r.status === 'pending').length > 0 &&
+                          <span className="text-yellow-400"> · ⏳ {responses.filter(r => r.form_id === f.id && r.status === 'pending').length} ausstehend</span>}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ));
+          })()}
+
+          {/* Neues Formular direkt von hier erstellen */}
+          <button onClick={() => { setActiveTab('forms'); openFormBuilder(); }}
+            className="w-full bg-white/5 hover:bg-white/10 border border-dashed border-white/20 hover:border-white/30 text-gray-400 hover:text-white py-4 rounded-xl text-sm transition flex items-center justify-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Neues eigenes Formular erstellen
+          </button>
+
         </div>
       )}
 
