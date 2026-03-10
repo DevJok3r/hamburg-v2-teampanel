@@ -227,9 +227,12 @@ export default function DeptApplicationsPage() {
   useEffect(() => { load(); }, []);
 
   /* ── Helpers ──────────────────────────────────────────────────────── */
-  function canSeeDept(dept: string) {
+    function canSeeDept(dept: string) {
     if (myRole === 'top_management') return true;
-    return myAccess.includes(dept);
+    // Feste Abteilungen: per myAccess prüfen
+    if (Object.keys(DEPT_LABELS).includes(dept)) return myAccess.includes(dept);
+    // Eigene Kategorien: Top Management only (bereits oben abgefangen)
+    return false;
   }
 
   function getPhase(dept: string): boolean {
@@ -299,7 +302,7 @@ export default function DeptApplicationsPage() {
       setFbQuestions(form.questions);
     } else {
       setEditingForm(null);
-      setFbTitle(''); setFbDept('moderation'); setFbDesc(''); setFbQuestions([]);
+      setFbTitle(''); setFbDept(''); setFbDesc(''); setFbQuestions([]);
     }
     setShowFormBuilder(true);
   }
@@ -355,7 +358,9 @@ export default function DeptApplicationsPage() {
   }
 
   /* ── Responses ────────────────────────────────────────────────────── */
-  const visibleForms   = forms.filter(f => canSeeDept(f.department));
+  const visibleForms = forms.filter(f =>
+    myRole === 'top_management' || canSeeDept(f.department)
+  );
   const visibleResponses = responses.filter(r => visibleForms.some(f => f.id === r.form_id));
   const filteredResponses = visibleResponses.filter(r => filterFormId === 'all' || r.form_id === filterFormId);
 
@@ -504,7 +509,7 @@ export default function DeptApplicationsPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <h3 className="text-white font-semibold">{form.title}</h3>
-                          <span className={`text-xs px-2 py-0.5 rounded border ${DEPT_COLORS[form.department]}`}>{DEPT_LABELS[form.department]}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded border ${DEPT_COLORS[form.department] || 'text-gray-400 bg-gray-500/10 border-gray-500/30'}`}>{DEPT_LABELS[form.department] || form.department}</span>
                           <span className={`text-xs px-2 py-0.5 rounded border ${form.is_active ? 'text-green-400 bg-green-500/10 border-green-500/30' : 'text-gray-400 bg-gray-500/10 border-gray-500/30'}`}>
                             {form.is_active ? '🟢 Aktiv' : '⚫ Inaktiv'}
                           </span>
@@ -736,7 +741,7 @@ export default function DeptApplicationsPage() {
                 <div>
                   <h2 className="text-white font-bold text-lg">{form?.title || 'Formular-Antwort'}</h2>
                   <div className="flex items-center gap-2 mt-1">
-                    {form && <span className={`text-xs px-2 py-0.5 rounded border ${DEPT_COLORS[form.department]}`}>{DEPT_LABELS[form.department]}</span>}
+                    {form && <span className={`text-xs px-2 py-0.5 rounded border ${DEPT_COLORS[form.department] || 'text-gray-400 bg-gray-500/10 border-gray-500/30'}`}>{DEPT_LABELS[form.department] || form.department}</span>}
                     <span className={`text-xs px-2 py-0.5 rounded border ${STATUS_STYLES[selectedResponse.status as keyof typeof STATUS_STYLES]}`}>{STATUS_LABELS[selectedResponse.status as keyof typeof STATUS_LABELS]}</span>
                   </div>
                 </div>
@@ -794,17 +799,15 @@ export default function DeptApplicationsPage() {
                 <div className="col-span-2">
                   <label className="text-gray-400 text-xs mb-1 block">Formular-Titel</label>
                   <input value={fbTitle} onChange={e => setFbTitle(e.target.value)}
-                    placeholder="z.B. Moderator Bewerbung v2..."
+                    placeholder="z.B. Game Tester Bewerbung, PR Team Application..."
                     className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500" />
                 </div>
                 <div>
-                  <label className="text-gray-400 text-xs mb-1 block">Abteilung</label>
-                  <select value={fbDept} onChange={e => setFbDept(e.target.value)}
-                    className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500">
-                    {Object.entries(DEPT_LABELS).filter(([k]) => canSeeDept(k)).map(([k, v]) => (
-                      <option key={k} value={k}>{v}</option>
-                    ))}
-                  </select>
+                  <label className="text-gray-400 text-xs mb-1 block">Kategorie / Abteilung</label>
+                  <input value={fbDept} onChange={e => setFbDept(e.target.value)}
+                    placeholder="z.B. Game Tester, PR Team, Support..."
+                    className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500" />
+                  <p className="text-gray-600 text-xs mt-1">Frei wählbar – auch eigene Kategorien möglich</p>
                 </div>
                 <div>
                   <label className="text-gray-400 text-xs mb-1 block">Beschreibung (optional)</label>
