@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClientSupabaseClient } from '@/lib/supabase/client';
+import { createBrowserClient } from '@supabase/ssr';
 import { useParams } from 'next/navigation';
 
 interface Question {
@@ -21,22 +21,20 @@ interface CustomForm {
   is_active: boolean;
 }
 
-const DEPT_LABELS: Record<string, string> = {
-  moderation: 'Moderation Team', social_media: 'Social Media Team',
-  event: 'Event Team', development: 'Development Team',
-};
-
 export default function CustomFormPage() {
-  const params = useParams();
-  const id     = params?.id as string;
-  const [form, setForm]       = useState<CustomForm | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [answers, setAnswers] = useState<Record<string, any>>({});
+  const params    = useParams();
+  const id        = params?.id as string;
+  const [form, setForm]           = useState<CustomForm | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [answers, setAnswers]     = useState<Record<string, any>>({});
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [errors, setErrors]   = useState<Record<string, string>>({});
+  const [errors, setErrors]       = useState<Record<string, string>>({});
 
-  const supabase = createClientSupabaseClient();
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
 
   useEffect(() => {
     async function load() {
@@ -63,9 +61,8 @@ export default function CustomFormPage() {
     form.questions.forEach(q => {
       if (q.required) {
         const v = answers[q.id];
-        if (!v || (Array.isArray(v) && v.length === 0) || String(v).trim() === '') {
+        if (!v || (Array.isArray(v) && v.length === 0) || String(v).trim() === '')
           newErrors[q.id] = 'Dieses Feld ist erforderlich.';
-        }
       }
     });
     if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return; }
@@ -95,8 +92,9 @@ export default function CustomFormPage() {
     <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-4">
       <div className="text-center">
         <p className="text-6xl mb-4">🔒</p>
-        <h1 className="text-white font-bold text-2xl mb-2">Formular geschlossen</h1>
+        <h1 className="text-white font-bold text-2xl mb-2">Bewerbungsphase geschlossen</h1>
         <p className="text-gray-400 text-sm">Dieses Bewerbungsformular ist aktuell nicht aktiv.</p>
+        <p className="text-gray-500 text-xs mt-2">Bitte schaue zu einem späteren Zeitpunkt wieder vorbei.</p>
       </div>
     </div>
   );
@@ -114,16 +112,12 @@ export default function CustomFormPage() {
   return (
     <div className="min-h-screen bg-[#0f1117] py-12 px-4">
       <div className="max-w-2xl mx-auto space-y-6">
-        {/* Header */}
         <div className="bg-[#1a1d27] border border-white/10 rounded-2xl p-6">
           <h1 className="text-white font-bold text-2xl mb-1">{form.title}</h1>
           {form.description && <p className="text-gray-400 text-sm mb-3">{form.description}</p>}
-          <span className="text-xs px-2 py-0.5 rounded border text-blue-400 bg-blue-500/10 border-blue-500/30">
-            {DEPT_LABELS[form.department] || form.department}
-          </span>
+          <span className="text-xs px-2 py-0.5 rounded border text-purple-400 bg-purple-500/10 border-purple-500/30">{form.department}</span>
         </div>
 
-        {/* Questions */}
         <div className="space-y-4">
           {form.questions.map((q, idx) => (
             <div key={q.id} className="bg-[#1a1d27] border border-white/10 rounded-xl p-5 space-y-3">
@@ -131,14 +125,13 @@ export default function CustomFormPage() {
                 <span className="text-gray-500 text-xs mt-0.5">{idx + 1}.</span>
                 <span>{q.label}{q.required && <span className="text-red-400 ml-1">*</span>}</span>
               </label>
-
               {q.type === 'text' && (
                 <input value={answers[q.id] || ''} onChange={e => setAnswer(q.id, e.target.value)}
-                  className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500" />
+                  className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500" />
               )}
               {q.type === 'textarea' && (
                 <textarea value={answers[q.id] || ''} onChange={e => setAnswer(q.id, e.target.value)} rows={4}
-                  className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
+                  className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500 resize-none" />
               )}
               {q.type === 'select' && (
                 <select value={answers[q.id] || ''} onChange={e => setAnswer(q.id, e.target.value)}
@@ -177,9 +170,7 @@ export default function CustomFormPage() {
                       </button>
                     ))}
                   </div>
-                  <div className="flex justify-between text-xs text-gray-500">
-                    <span>Schlecht</span><span>Ausgezeichnet</span>
-                  </div>
+                  <div className="flex justify-between text-xs text-gray-500"><span>Schlecht</span><span>Ausgezeichnet</span></div>
                 </div>
               )}
               {q.type === 'yesno' && (
@@ -192,7 +183,6 @@ export default function CustomFormPage() {
                   ))}
                 </div>
               )}
-
               {errors[q.id] && <p className="text-red-400 text-xs">{errors[q.id]}</p>}
             </div>
           ))}
@@ -202,6 +192,7 @@ export default function CustomFormPage() {
           className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl text-sm transition">
           {submitting ? 'Wird gesendet...' : '📤 Bewerbung absenden'}
         </button>
+        <p className="text-gray-600 text-xs text-center pb-8">Deine Daten werden vertraulich behandelt. © Hamburg V2 Staff Portal</p>
       </div>
     </div>
   );
