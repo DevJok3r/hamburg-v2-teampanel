@@ -262,21 +262,21 @@ export default function ConferencesPage() {
   // Junior Management+ kann erstellen/bearbeiten/löschen
   const canManage = myRole ? ['junior_management', 'management', 'top_management'].includes(myRole) : false;
 
-  // Welche Konferenzen darf dieser User sehen?
+// Welche Konferenzen darf dieser User sehen?
   function canSeeConference(conf: any): boolean {
     if (!myRole) return false;
-    // Management sieht alles
     if (canManage) return true;
     const targets: string[] = conf.target_roles || [];
-    // Allgemeine Konferenz → jeder sieht sie
     if (targets.length === 0) return true;
-    // User ist direkt als extra eingeladen
-    if ((conf.extra_user_ids || []).includes(myId)) return true;
-    // Rolle des Users mappt zu einer der Zielgruppen
-    const myTargetKey = myRole ? ROLE_TO_TARGET[myRole] : null;
+    if (myId && (conf.extra_user_ids || []).includes(myId)) return true;
+    // Direkt Rolle checken
+    if (targets.includes(myRole)) return true;
+    // ROLE_TO_TARGET mapping
+    const myTargetKey = ROLE_TO_TARGET[myRole];
     if (myTargetKey && targets.includes(myTargetKey)) return true;
-    // Department des Users matcht eine der Zielgruppen
-    return myDepts.some(d => targets.includes(d));
+    // Department array checken
+    if (myDepts.some(d => targets.includes(d))) return true;
+    return false;
   }
 
   async function createConference() {
