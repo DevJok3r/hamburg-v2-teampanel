@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createClientSupabaseClient } from '@/lib/supabase/client';
-import { Profile, UserRole, AttendanceStatus } from '@/types';
+import { UserRole, AttendanceStatus } from '@/types';
 import RoleBadge from '@/components/RoleBadge';
 
 const STATUS_STYLES = {
@@ -50,6 +50,24 @@ const CATEGORIES: { key: ConferenceStatus; label: string; icon: string }[] = [
   { key: 'cancelled', label: 'Abgesagt',      icon: '❌' },
 ];
 
+const ROLE_TO_TARGET: Record<string, string> = {
+  moderator:               'moderation_team',
+  trial_moderator:         'moderation_team',
+  senior_moderator:        'moderation_team',
+  developer:               'development_team',
+  trial_developer:         'development_team',
+  senior_developer:        'development_team',
+  content_producer:        'social_media_team',
+  trial_content_producer:  'social_media_team',
+  senior_content_producer: 'social_media_team',
+  event_organizer:         'event_team',
+  trial_event_organizer:   'event_team',
+  senior_event_organizer:  'event_team',
+  junior_management:       'junior_management',
+  management:              'management',
+  top_management:          'top_management',
+};
+
 type FormData = {
   title: string; description: string; scheduled_at: string;
   conference_type: ConferenceType; target_roles: string[]; extra_user_ids: string[];
@@ -71,25 +89,6 @@ function memberMatchesTargets(member: any, targetRoles: string[]): boolean {
   return depts.some((d: string) => targetRoles.includes(d));
 }
 
-// Dept key mapping: role → target_group key
-const ROLE_TO_TARGET: Record<string, string> = {
-  moderator:               'moderation_team',
-  trial_moderator:         'moderation_team',
-  senior_moderator:        'moderation_team',
-  developer:               'development_team',
-  trial_developer:         'development_team',
-  senior_developer:        'development_team',
-  content_producer:        'social_media_team',
-  trial_content_producer:  'social_media_team',
-  senior_content_producer: 'social_media_team',
-  event_organizer:         'event_team',
-  trial_event_organizer:   'event_team',
-  senior_event_organizer:  'event_team',
-  junior_management:       'junior_management',
-  management:              'management',
-  top_management:          'top_management',
-};
-
 function ConferenceForm({ data, setData, onSave, onCancel, title, members }: {
   data: FormData;
   setData: React.Dispatch<React.SetStateAction<FormData>>;
@@ -101,15 +100,12 @@ function ConferenceForm({ data, setData, onSave, onCancel, title, members }: {
   return (
     <div className="bg-[#1a1d27] border border-white/10 rounded-xl p-5 space-y-4">
       <h3 className="text-white font-medium">{title}</h3>
-
       <input value={data.title} onChange={e => setData(p => ({ ...p, title: e.target.value }))}
         placeholder="Titel der Konferenz..."
         className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500" />
-
       <textarea value={data.description} onChange={e => setData(p => ({ ...p, description: e.target.value }))}
         placeholder="Beschreibung (optional)..." rows={2}
         className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
-
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="text-gray-400 text-xs mb-1 block">Datum & Uhrzeit *</label>
@@ -125,7 +121,6 @@ function ConferenceForm({ data, setData, onSave, onCancel, title, members }: {
           </select>
         </div>
       </div>
-
       <div>
         <label className="text-gray-400 text-xs mb-2 block">
           Zielgruppe / Abteilung * <span className="text-red-400">(mind. eine Pflicht)</span>
@@ -148,7 +143,6 @@ function ConferenceForm({ data, setData, onSave, onCancel, title, members }: {
           ))}
         </div>
       </div>
-
       {data.target_roles.length > 0 && (
         <div>
           <label className="text-gray-400 text-xs mb-2 block">
@@ -167,7 +161,6 @@ function ConferenceForm({ data, setData, onSave, onCancel, title, members }: {
           </div>
         </div>
       )}
-
       <div>
         <label className="text-gray-400 text-xs mb-2 block">Zusätzliche Personen (optional)</label>
         <div className="bg-[#0f1117] rounded-lg p-3 max-h-40 overflow-y-auto space-y-1">
@@ -188,7 +181,6 @@ function ConferenceForm({ data, setData, onSave, onCancel, title, members }: {
           ))}
         </div>
       </div>
-
       <div className="flex justify-end gap-2">
         <button onClick={onCancel}
           className="bg-white/5 hover:bg-white/10 text-gray-300 font-medium px-4 py-2 rounded-lg transition text-sm">
@@ -210,7 +202,6 @@ export default function ConferencesPage() {
   const [myRole, setMyRole]                     = useState<UserRole | null>(null);
   const [myId, setMyId]                         = useState<string>('');
   const [myUsername, setMyUsername]             = useState<string>('');
-  const [myDepts, setMyDepts]                   = useState<string[]>([]);
   const [loading, setLoading]                   = useState(true);
   const [showForm, setShowForm]                 = useState(false);
   const [editConference, setEditConference]     = useState<any | null>(null);
@@ -235,49 +226,51 @@ export default function ConferencesPage() {
   async function load() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    setMyId(user.id);
+
     const { data: profile } = await supabase
       .from('profiles')
       .select('role, username, departments')
       .eq('id', user.id)
       .single();
-    if (profile) {
-      setMyRole(profile.role as UserRole);
-      setMyUsername(profile.username);
-      setMyDepts(profile.departments || []);
-    }
+
+    if (!profile) return;
+
+    const role = profile.role as UserRole;
+    const depts: string[] = profile.departments || [];
+    const targetKey = ROLE_TO_TARGET[role] || '';
+    const canManageLocal = ['junior_management', 'management', 'top_management'].includes(role);
+
+    setMyId(user.id);
+    setMyRole(role);
+    setMyUsername(profile.username);
+
     const { data: confs } = await supabase
       .from('conferences')
       .select('*, profiles!conferences_created_by_fkey(username, role)')
       .order('scheduled_at', { ascending: false });
+
     const { data: allMembers } = await supabase
       .from('profiles').select('id, username, role, departments').eq('is_active', true).order('username');
-    setConferences(confs || []);
+
+    // Filter mit frischen lokalen Variablen – nicht auf State angewiesen
+    const visible = (confs || []).filter((conf: any) => {
+      if (canManageLocal) return true;
+      const targets: string[] = conf.target_roles || [];
+      if (targets.length === 0) return true;
+      if ((conf.extra_user_ids || []).includes(user.id)) return true;
+      if (targetKey && targets.includes(targetKey)) return true;
+      if (depts.some((d: string) => targets.includes(d))) return true;
+      return false;
+    });
+
+    setConferences(visible);
     setMembers(allMembers || []);
     setLoading(false);
   }
 
   useEffect(() => { load(); }, []);
 
-  // Junior Management+ kann erstellen/bearbeiten/löschen
   const canManage = myRole ? ['junior_management', 'management', 'top_management'].includes(myRole) : false;
-
-// Welche Konferenzen darf dieser User sehen?
-  function canSeeConference(conf: any): boolean {
-    if (!myRole) return false;
-    if (canManage) return true;
-    const targets: string[] = conf.target_roles || [];
-    if (targets.length === 0) return true;
-    if (myId && (conf.extra_user_ids || []).includes(myId)) return true;
-    // Direkt Rolle checken
-    if (targets.includes(myRole)) return true;
-    // ROLE_TO_TARGET mapping
-    const myTargetKey = ROLE_TO_TARGET[myRole];
-    if (myTargetKey && targets.includes(myTargetKey)) return true;
-    // Department array checken
-    if (myDepts.some(d => targets.includes(d))) return true;
-    return false;
-  }
 
   async function createConference() {
     if (!form.title.trim() || !form.scheduled_at || form.target_roles.length === 0) return;
@@ -365,15 +358,14 @@ export default function ConferencesPage() {
     load();
   }
 
-  console.log('DEBUG', { myRole, myId, myDepts, conferences: conferences.map(c => ({ id: c.id, targets: c.target_roles, extra: c.extra_user_ids })) });
-  const filteredConferences = conferences.filter(c => c.status === activeTab && canSeeConference(c));
+  const filteredConferences = conferences.filter(c => c.status === activeTab);
 
   return (
     <div className="space-y-6 max-w-4xl">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Konferenzen</h1>
-          <p className="text-gray-400 text-sm mt-1">{conferences.filter(c => canSeeConference(c)).length} Konferenzen</p>
+          <p className="text-gray-400 text-sm mt-1">{conferences.length} Konferenzen</p>
         </div>
         {canManage && (
           <button onClick={() => { setShowForm(!showForm); setForm({ ...EMPTY_FORM }); }}
@@ -391,7 +383,6 @@ export default function ConferencesPage() {
           onCancel={() => setShowForm(false)} title="Neue Konferenz ankündigen" members={members} />
       )}
 
-      {/* Anwesenheitsliste Modal */}
       {activeAttendance && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-[#1a1d27] border border-white/10 rounded-2xl p-6 w-full max-w-2xl max-h-[85vh] overflow-y-auto">
@@ -419,7 +410,6 @@ export default function ConferencesPage() {
                 </button>
               </div>
             </div>
-
             <div className="grid grid-cols-3 gap-3 mb-4">
               {(['present', 'excused', 'absent'] as AttendanceStatus[]).map(s => (
                 <div key={s} className={`rounded-lg p-3 border text-center ${ATTENDANCE_STYLES[s]}`}>
@@ -428,7 +418,6 @@ export default function ConferencesPage() {
                 </div>
               ))}
             </div>
-
             <div className="space-y-3">
               {activeAttendance.attendance.map((a: any) => (
                 <div key={a.user_id} className="bg-[#0f1117] rounded-lg px-4 py-3">
@@ -488,7 +477,6 @@ export default function ConferencesPage() {
         </div>
       )}
 
-      {/* Bearbeiten Modal */}
       {editConference && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-[#1a1d27] border border-white/10 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -498,10 +486,9 @@ export default function ConferencesPage() {
         </div>
       )}
 
-      {/* Tabs */}
       <div className="flex gap-2 flex-wrap">
         {CATEGORIES.map(cat => {
-          const count = conferences.filter(c => c.status === cat.key && canSeeConference(c)).length;
+          const count = conferences.filter(c => c.status === cat.key).length;
           return (
             <button key={cat.key} onClick={() => setActiveTab(cat.key)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition
@@ -513,7 +500,6 @@ export default function ConferencesPage() {
         })}
       </div>
 
-      {/* Liste */}
       {loading ? (
         <div className="text-gray-400 text-center py-12">Lade...</div>
       ) : filteredConferences.length === 0 ? (
