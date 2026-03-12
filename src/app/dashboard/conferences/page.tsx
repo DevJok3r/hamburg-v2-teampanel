@@ -365,6 +365,7 @@ export default function ConferencesPage() {
     load();
   }
 
+  console.log('DEBUG', { myRole, myId, myDepts, conferences: conferences.map(c => ({ id: c.id, targets: c.target_roles, extra: c.extra_user_ids })) });
   const filteredConferences = conferences.filter(c => c.status === activeTab && canSeeConference(c));
 
   return (
