@@ -238,7 +238,9 @@ export default function ConferencesPage() {
 
   useEffect(() => { load(); }, []);
 
-  const canManage = myRole ? can.manageConferences(myRole) : false;
+  const STAFF_ROLES = ['moderator','developer','content_producer','event_organizer','trial_moderator','trial_developer','trial_content','trial_event','senior_moderator','senior_developer','senior_content','senior_event'];
+  const canView    = !!myRole; // Alle eingeloggten Staff-Mitglieder
+  const canManage = myRole ? ['junior_management', 'management', 'top_management'].includes(myRole) : false;
 
   async function createConference() {
     if (!form.title.trim() || !form.scheduled_at || form.target_roles.length === 0) return;
