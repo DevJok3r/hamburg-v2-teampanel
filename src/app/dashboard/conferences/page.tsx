@@ -73,21 +73,21 @@ function memberMatchesTargets(member: any, targetRoles: string[]): boolean {
 
 // Dept key mapping: role → target_group key
 const ROLE_TO_TARGET: Record<string, string> = {
-  moderator:        'moderation_team',
-  trial_moderator:  'moderation_team',
-  senior_moderator: 'moderation_team',
-  developer:        'development_team',
-  trial_developer:  'development_team',
-  senior_developer: 'development_team',
-  content_producer: 'social_media_team',
-  trial_content:    'social_media_team',
-  senior_content:   'social_media_team',
-  event_organizer:  'event_team',
-  trial_event:      'event_team',
-  senior_event:     'event_team',
-  junior_management:'junior_management',
-  management:       'management',
-  top_management:   'top_management',
+  moderator:               'moderation_team',
+  trial_moderator:         'moderation_team',
+  senior_moderator:        'moderation_team',
+  developer:               'development_team',
+  trial_developer:         'development_team',
+  senior_developer:        'development_team',
+  content_producer:        'social_media_team',
+  trial_content_producer:  'social_media_team',
+  senior_content_producer: 'social_media_team',
+  event_organizer:         'event_team',
+  trial_event_organizer:   'event_team',
+  senior_event_organizer:  'event_team',
+  junior_management:       'junior_management',
+  management:              'management',
+  top_management:          'top_management',
 };
 
 function ConferenceForm({ data, setData, onSave, onCancel, title, members }: {
