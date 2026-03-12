@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { createClientSupabaseClient } from '@/lib/supabase/client';
 import { Profile, UserRole, AttendanceStatus } from '@/types';
-import { can } from '@/lib/permissions';
 import RoleBadge from '@/components/RoleBadge';
 
 const STATUS_STYLES = {
@@ -66,14 +65,31 @@ function toLocalDatetimeValue(isoString: string): string {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
-// Prüft ob ein Mitglied zu einer Zielgruppe gehört (role ODER department)
 function memberMatchesTargets(member: any, targetRoles: string[]): boolean {
   if (targetRoles.includes(member.role)) return true;
   const depts: string[] = member.departments || [];
   return depts.some((d: string) => targetRoles.includes(d));
 }
 
-// ─── ConferenceForm außerhalb ────────────────────────────────────────────────
+// Dept key mapping: role → target_group key
+const ROLE_TO_TARGET: Record<string, string> = {
+  moderator:        'moderation_team',
+  trial_moderator:  'moderation_team',
+  senior_moderator: 'moderation_team',
+  developer:        'development_team',
+  trial_developer:  'development_team',
+  senior_developer: 'development_team',
+  content_producer: 'social_media_team',
+  trial_content:    'social_media_team',
+  senior_content:   'social_media_team',
+  event_organizer:  'event_team',
+  trial_event:      'event_team',
+  senior_event:     'event_team',
+  junior_management:'junior_management',
+  management:       'management',
+  top_management:   'top_management',
+};
+
 function ConferenceForm({ data, setData, onSave, onCancel, title, members }: {
   data: FormData;
   setData: React.Dispatch<React.SetStateAction<FormData>>;
@@ -133,7 +149,6 @@ function ConferenceForm({ data, setData, onSave, onCancel, title, members }: {
         </div>
       </div>
 
-      {/* Vorschau wer eingeladen wird */}
       {data.target_roles.length > 0 && (
         <div>
           <label className="text-gray-400 text-xs mb-2 block">
@@ -156,23 +171,21 @@ function ConferenceForm({ data, setData, onSave, onCancel, title, members }: {
       <div>
         <label className="text-gray-400 text-xs mb-2 block">Zusätzliche Personen (optional)</label>
         <div className="bg-[#0f1117] rounded-lg p-3 max-h-40 overflow-y-auto space-y-1">
-          {members
-            .filter(m => !memberMatchesTargets(m, data.target_roles))
-            .map(m => (
-              <label key={m.id} className="flex items-center gap-2 cursor-pointer hover:bg-white/5 rounded px-2 py-1">
-                <input type="checkbox"
-                  checked={data.extra_user_ids.includes(m.id)}
-                  onChange={() => setData(p => ({
-                    ...p,
-                    extra_user_ids: p.extra_user_ids.includes(m.id)
-                      ? p.extra_user_ids.filter(x => x !== m.id)
-                      : [...p.extra_user_ids, m.id],
-                  }))}
-                  className="rounded" />
-                <span className="text-white text-xs">{m.username}</span>
-                <RoleBadge role={m.role as UserRole} size="xs" />
-              </label>
-            ))}
+          {members.filter(m => !memberMatchesTargets(m, data.target_roles)).map(m => (
+            <label key={m.id} className="flex items-center gap-2 cursor-pointer hover:bg-white/5 rounded px-2 py-1">
+              <input type="checkbox"
+                checked={data.extra_user_ids.includes(m.id)}
+                onChange={() => setData(p => ({
+                  ...p,
+                  extra_user_ids: p.extra_user_ids.includes(m.id)
+                    ? p.extra_user_ids.filter(x => x !== m.id)
+                    : [...p.extra_user_ids, m.id],
+                }))}
+                className="rounded" />
+              <span className="text-white text-xs">{m.username}</span>
+              <RoleBadge role={m.role as UserRole} size="xs" />
+            </label>
+          ))}
         </div>
       </div>
 
@@ -191,13 +204,13 @@ function ConferenceForm({ data, setData, onSave, onCancel, title, members }: {
   );
 }
 
-// ─── Hauptkomponente ──────────────────────────────────────────────────────────
 export default function ConferencesPage() {
   const [conferences, setConferences]           = useState<any[]>([]);
   const [members, setMembers]                   = useState<any[]>([]);
   const [myRole, setMyRole]                     = useState<UserRole | null>(null);
   const [myId, setMyId]                         = useState<string>('');
   const [myUsername, setMyUsername]             = useState<string>('');
+  const [myDepts, setMyDepts]                   = useState<string[]>([]);
   const [loading, setLoading]                   = useState(true);
   const [showForm, setShowForm]                 = useState(false);
   const [editConference, setEditConference]     = useState<any | null>(null);
@@ -223,8 +236,16 @@ export default function ConferencesPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     setMyId(user.id);
-    const { data: profile } = await supabase.from('profiles').select('role, username').eq('id', user.id).single();
-    if (profile) { setMyRole(profile.role as UserRole); setMyUsername(profile.username); }
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role, username, departments')
+      .eq('id', user.id)
+      .single();
+    if (profile) {
+      setMyRole(profile.role as UserRole);
+      setMyUsername(profile.username);
+      setMyDepts(profile.departments || []);
+    }
     const { data: confs } = await supabase
       .from('conferences')
       .select('*, profiles!conferences_created_by_fkey(username, role)')
@@ -238,9 +259,25 @@ export default function ConferencesPage() {
 
   useEffect(() => { load(); }, []);
 
-  const STAFF_ROLES = ['moderator','developer','content_producer','event_organizer','trial_moderator','trial_developer','trial_content','trial_event','senior_moderator','senior_developer','senior_content','senior_event'];
-  const canView    = !!myRole; // Alle eingeloggten Staff-Mitglieder
+  // Junior Management+ kann erstellen/bearbeiten/löschen
   const canManage = myRole ? ['junior_management', 'management', 'top_management'].includes(myRole) : false;
+
+  // Welche Konferenzen darf dieser User sehen?
+  function canSeeConference(conf: any): boolean {
+    if (!myRole) return false;
+    // Management sieht alles
+    if (canManage) return true;
+    const targets: string[] = conf.target_roles || [];
+    // Allgemeine Konferenz → jeder sieht sie
+    if (targets.length === 0) return true;
+    // User ist direkt als extra eingeladen
+    if ((conf.extra_user_ids || []).includes(myId)) return true;
+    // Rolle des Users mappt zu einer der Zielgruppen
+    const myTargetKey = myRole ? ROLE_TO_TARGET[myRole] : null;
+    if (myTargetKey && targets.includes(myTargetKey)) return true;
+    // Department des Users matcht eine der Zielgruppen
+    return myDepts.some(d => targets.includes(d));
+  }
 
   async function createConference() {
     if (!form.title.trim() || !form.scheduled_at || form.target_roles.length === 0) return;
@@ -281,7 +318,7 @@ export default function ConferencesPage() {
   async function startConference(conference: any) {
     await supabase.from('conferences').update({ status: 'active', started_at: new Date().toISOString() }).eq('id', conference.id);
     const attendanceRows = members
-      .filter(m => memberMatchesTargets(m, conference.target_roles) || conference.extra_user_ids.includes(m.id))
+      .filter(m => memberMatchesTargets(m, conference.target_roles) || (conference.extra_user_ids || []).includes(m.id))
       .map(m => ({ conference_id: conference.id, user_id: m.id, status: 'absent' as AttendanceStatus, note: null }));
     await supabase.from('conference_attendance').upsert(attendanceRows, { onConflict: 'conference_id,user_id' });
     await fireAutomation('conference_started', { titel: conference.title, datum: new Date().toLocaleString('de-DE'), ersteller: myUsername });
@@ -328,14 +365,14 @@ export default function ConferencesPage() {
     load();
   }
 
-  const filteredConferences = conferences.filter(c => c.status === activeTab);
+  const filteredConferences = conferences.filter(c => c.status === activeTab && canSeeConference(c));
 
   return (
     <div className="space-y-6 max-w-4xl">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Konferenzen</h1>
-          <p className="text-gray-400 text-sm mt-1">{conferences.length} Konferenzen gesamt</p>
+          <p className="text-gray-400 text-sm mt-1">{conferences.filter(c => canSeeConference(c)).length} Konferenzen</p>
         </div>
         {canManage && (
           <button onClick={() => { setShowForm(!showForm); setForm({ ...EMPTY_FORM }); }}
@@ -463,7 +500,7 @@ export default function ConferencesPage() {
       {/* Tabs */}
       <div className="flex gap-2 flex-wrap">
         {CATEGORIES.map(cat => {
-          const count = conferences.filter(c => c.status === cat.key).length;
+          const count = conferences.filter(c => c.status === cat.key && canSeeConference(c)).length;
           return (
             <button key={cat.key} onClick={() => setActiveTab(cat.key)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition
