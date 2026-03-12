@@ -50,6 +50,7 @@ const CATEGORIES: { key: ConferenceStatus; label: string; icon: string }[] = [
   { key: 'cancelled', label: 'Abgesagt',      icon: '❌' },
 ];
 
+// Mappt Rolle zu Zielgruppen-Key
 const ROLE_TO_TARGET: Record<string, string> = {
   moderator:               'moderation_team',
   trial_moderator:         'moderation_team',
@@ -182,8 +183,7 @@ function ConferenceForm({ data, setData, onSave, onCancel, title, members }: {
         </div>
       </div>
       <div className="flex justify-end gap-2">
-        <button onClick={onCancel}
-          className="bg-white/5 hover:bg-white/10 text-gray-300 font-medium px-4 py-2 rounded-lg transition text-sm">
+        <button onClick={onCancel} className="bg-white/5 hover:bg-white/10 text-gray-300 font-medium px-4 py-2 rounded-lg transition text-sm">
           Abbrechen
         </button>
         <button onClick={onSave}
@@ -237,13 +237,14 @@ export default function ConferencesPage() {
 
     const role = profile.role as UserRole;
     const depts: string[] = profile.departments || [];
-    const targetKey = ROLE_TO_TARGET[role] || '';
     const canManageLocal = ['junior_management', 'management', 'top_management'].includes(role);
+    const targetKey = ROLE_TO_TARGET[role] || '';
 
     setMyId(user.id);
     setMyRole(role);
     setMyUsername(profile.username);
 
+    // Alle Konferenzen laden – RLS muss SELECT für authenticated erlauben
     const { data: confs } = await supabase
       .from('conferences')
       .select('*, profiles!conferences_created_by_fkey(username, role)')
@@ -252,13 +253,17 @@ export default function ConferencesPage() {
     const { data: allMembers } = await supabase
       .from('profiles').select('id, username, role, departments').eq('is_active', true).order('username');
 
-    // Filter mit frischen lokalen Variablen – nicht auf State angewiesen
+    // Filtern auf Client-Seite mit frischen lokalen Variablen
     const visible = (confs || []).filter((conf: any) => {
       if (canManageLocal) return true;
       const targets: string[] = conf.target_roles || [];
+      // Keine Zielgruppe = allgemein = jeder sieht es
       if (targets.length === 0) return true;
+      // Extra eingeladen
       if ((conf.extra_user_ids || []).includes(user.id)) return true;
+      // Rolle mappt zu Zielgruppe
       if (targetKey && targets.includes(targetKey)) return true;
+      // Department direkt in Zielgruppe
       if (depts.some((d: string) => targets.includes(d))) return true;
       return false;
     });
