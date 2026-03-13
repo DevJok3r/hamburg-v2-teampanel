@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createClientSupabaseClient } from '@/lib/supabase/client';
 import { UserRole } from '@/types';
 
@@ -38,7 +38,7 @@ interface TimelineEntry {
   author?: { username: string };
 }
 
-interface StaffProfile {
+interface Profile {
   id: string;
   username: string;
   role: string;
@@ -46,11 +46,11 @@ interface StaffProfile {
 }
 
 const STATUS_CONFIG = {
-  pending_approval: { label: 'Wartet auf Freigabe', short: 'Ausstehend', bg: 'bg-amber-500/10', border: 'border-amber-500/30', text: 'text-amber-400', dot: 'bg-amber-400' },
-  approved:         { label: 'Freigegeben',          short: 'Freigegeben', bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-400', dot: 'bg-blue-400' },
-  in_progress:      { label: 'In Bearbeitung',        short: 'Aktiv',       bg: 'bg-violet-500/10', border: 'border-violet-500/30', text: 'text-violet-400', dot: 'bg-violet-400' },
-  completed:        { label: 'Abgeschlossen',          short: 'Fertig',      bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', text: 'text-emerald-400', dot: 'bg-emerald-400' },
-  cancelled:        { label: 'Storniert',              short: 'Storniert',   bg: 'bg-red-500/10', border: 'border-red-500/30', text: 'text-red-400', dot: 'bg-red-400' },
+  pending_approval: { label: 'Wartet auf Freigabe', short: 'Ausstehend', bg: 'bg-amber-500/10', border: 'border-amber-500/30', text: 'text-amber-400', dot: 'bg-amber-400', icon: '⏳' },
+  approved:         { label: 'Freigegeben',          short: 'Freigegeben', bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-400', dot: 'bg-blue-400', icon: '✓' },
+  in_progress:      { label: 'In Bearbeitung',        short: 'Aktiv',      bg: 'bg-violet-500/10', border: 'border-violet-500/30', text: 'text-violet-400', dot: 'bg-violet-400', icon: '⚡' },
+  completed:        { label: 'Abgeschlossen',          short: 'Fertig',     bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', text: 'text-emerald-400', dot: 'bg-emerald-400', icon: '✦' },
+  cancelled:        { label: 'Storniert',              short: 'Storniert',  bg: 'bg-red-500/10', border: 'border-red-500/30', text: 'text-red-400', dot: 'bg-red-400', icon: '✕' },
 };
 
 const PRESET_TAGS = [
@@ -63,7 +63,7 @@ function generateOrderNumber() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
   for (let i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
-  return `HV-${code.slice(0, 4)}-${code.slice(4)}`;
+  return `HV-${code.slice(0,4)}-${code.slice(4)}`;
 }
 
 function ProgressRing({ value, size = 48 }: { value: number; size?: number }) {
@@ -73,87 +73,76 @@ function ProgressRing({ value, size = 48 }: { value: number; size?: number }) {
   const color = value === 100 ? '#10b981' : value >= 75 ? '#8b5cf6' : value >= 40 ? '#3b82f6' : '#f59e0b';
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="rotate-[-90deg]">
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={4} />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={4}
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={4} />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={4}
         strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
         style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
     </svg>
   );
 }
 
-const EMPTY_CF = { name: '', discord: '', email: '', product: '', desc: '', price: '', currency: 'EUR', notes: '', internal: '' };
-
 export default function OrdersManagementPage() {
-  const supabase = createClientSupabaseClient();
-
-  // Use refs for values needed inside async callbacks to avoid stale closures
-  const myIdRef       = useRef('');
-  const myUsernameRef = useRef('');
-
-  const [myRole, setMyRole]           = useState<UserRole | null>(null);
   const [orders, setOrders]           = useState<Order[]>([]);
-  const [allProfiles, setAllProfiles] = useState<StaffProfile[]>([]);
+  const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
+  const [myRole, setMyRole]           = useState<UserRole | null>(null);
+  const [myId, setMyId]               = useState('');
+  const [myUsername, setMyUsername]   = useState('');
   const [loading, setLoading]         = useState(true);
   const [activeTab, setActiveTab]     = useState<'all' | 'pending_approval' | 'active' | 'completed' | 'cancelled'>('all');
   const [search, setSearch]           = useState('');
   const [selected, setSelected]       = useState<Order | null>(null);
   const [timeline, setTimeline]       = useState<TimelineEntry[]>([]);
   const [showCreate, setShowCreate]   = useState(false);
-  const [showAccess, setShowAccess]   = useState(false);
-  const [accessOrderId, setAccessOrderId] = useState('');
-  const [accessSearch, setAccessSearch]   = useState('');
   const [toast, setToast]             = useState<{ msg: string; ok: boolean } | null>(null);
-  const [cf, setCf]                   = useState({ ...EMPTY_CF });
-  const [saving, setSaving]           = useState(false);
-  const [ed, setEd]                   = useState({ progress: 0, tag: '', status: 'approved' as Order['status'], internal: '' });
-  const [tlMsg, setTlMsg]             = useState('');
-  const [savingEd, setSavingEd]       = useState(false);
+
+  // Create form
+  const [cf, setCf] = useState({ name: '', discord: '', email: '', product: '', desc: '', price: '', currency: 'EUR', notes: '', internal: '' });
+  const [saving, setSaving] = useState(false);
+
+  // Edit
+  const [ed, setEd] = useState({ progress: 0, tag: '', status: 'approved' as Order['status'], internal: '' });
+  const [tlMsg, setTlMsg] = useState('');
+  const [savingEd, setSavingEd] = useState(false);
+
+  // Access control
+  const [showAccess, setShowAccess] = useState(false);
+  const [accessOrder, setAccessOrder] = useState<Order | null>(null);
+  const [accessSearch, setAccessSearch] = useState('');
+
+  // show_staff_orders toggle
   const [togglingUser, setTogglingUser] = useState<string | null>(null);
+
+  const supabase = createClientSupabaseClient();
 
   function notify(msg: string, ok = true) {
     setToast({ msg, ok });
     setTimeout(() => setToast(null), 4000);
   }
 
-  async function loadOrders() {
-    const { data } = await supabase
+  const load = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setMyId(user.id);
+    const { data: profile } = await supabase.from('profiles').select('role, username').eq('id', user.id).single();
+    if (profile) { setMyRole(profile.role as UserRole); setMyUsername(profile.username); }
+
+    const { data: ordersData } = await supabase
       .from('orders')
       .select('*, creator:profiles!orders_created_by_fkey(username, role)')
       .order('created_at', { ascending: false });
-    setOrders(data || []);
-  }
+    setOrders(ordersData || []);
 
-  async function loadProfiles() {
-    const { data } = await supabase
+    const { data: profilesData } = await supabase
       .from('profiles')
       .select('id, username, role, show_staff_orders')
       .eq('is_active', true)
       .order('username');
-    setAllProfiles(data || []);
-  }
+    setAllProfiles(profilesData || []);
 
-  useEffect(() => {
-    async function init() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      myIdRef.current = user.id;
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role, username')
-        .eq('id', user.id)
-        .single();
-
-      if (profile) {
-        setMyRole(profile.role as UserRole);
-        myUsernameRef.current = profile.username;
-      }
-
-      await Promise.all([loadOrders(), loadProfiles()]);
-      setLoading(false);
-    }
-    init();
+    setLoading(false);
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const isTopManagement = myRole === 'top_management';
 
@@ -161,8 +150,7 @@ export default function OrdersManagementPage() {
     const { data: o } = await supabase
       .from('orders')
       .select('*, creator:profiles!orders_created_by_fkey(username, role)')
-      .eq('id', id)
-      .single();
+      .eq('id', id).single();
     if (o) {
       setSelected(o);
       setEd({ progress: o.progress, tag: o.status_tag, status: o.status, internal: o.internal_notes || '' });
@@ -170,112 +158,84 @@ export default function OrdersManagementPage() {
     const { data: tl } = await supabase
       .from('order_timeline')
       .select('*, author:profiles!order_timeline_created_by_fkey(username)')
-      .eq('order_id', id)
-      .order('created_at', { ascending: true });
+      .eq('order_id', id).order('created_at', { ascending: true });
     setTimeline(tl || []);
   }
 
   async function createOrder() {
     if (!cf.name.trim() || !cf.product.trim()) return;
-    if (!myIdRef.current) {
-      notify('Fehler: Nicht eingeloggt.', false);
-      return;
-    }
     setSaving(true);
-    const { error } = await supabase.from('orders').insert({
+    await supabase.from('orders').insert({
       order_number: generateOrderNumber(),
-      customer_name: cf.name.trim(),
-      customer_discord: cf.discord.trim() || null,
-      customer_email: cf.email.trim() || null,
-      product_name: cf.product.trim(),
-      product_description: cf.desc.trim() || null,
+      customer_name: cf.name, customer_discord: cf.discord || null,
+      customer_email: cf.email || null, product_name: cf.product,
+      product_description: cf.desc || null,
       price: cf.price ? parseFloat(cf.price) : null,
-      currency: cf.currency,
-      notes: cf.notes.trim() || null,
-      internal_notes: cf.internal.trim() || null,
-      status: 'pending_approval',
-      progress: 0,
-      status_tag: 'Zahlung ausstehend',
-      created_by: myIdRef.current,
+      currency: cf.currency, notes: cf.notes || null,
+      internal_notes: cf.internal || null,
+      status: 'pending_approval', progress: 0,
+      status_tag: 'Zahlung ausstehend', created_by: myId,
       allowed_user_ids: [],
     });
     setSaving(false);
-    if (error) {
-      notify('Fehler: ' + error.message, false);
-      return;
-    }
     setShowCreate(false);
-    setCf({ ...EMPTY_CF });
+    setCf({ name: '', discord: '', email: '', product: '', desc: '', price: '', currency: 'EUR', notes: '', internal: '' });
     notify('Auftrag erstellt.');
-    await loadOrders();
+    load();
   }
 
   async function approveOrder(o: Order) {
-    const { error } = await supabase.from('orders').update({
-      status: 'approved',
-      approved_by: myIdRef.current,
+    await supabase.from('orders').update({
+      status: 'approved', approved_by: myId,
       approved_at: new Date().toISOString(),
-      status_tag: 'Zahlung bestätigt',
-      progress: 15,
+      status_tag: 'Zahlung bestätigt', progress: 15,
     }).eq('id', o.id);
-    if (error) { notify('Fehler: ' + error.message, false); return; }
     await supabase.from('order_timeline').insert({
       order_id: o.id,
       message: `Auftrag freigegeben. Auftragsnummer aktiv: ${o.order_number}`,
-      created_by: myIdRef.current,
+      created_by: myId,
     });
     notify(`✓ ${o.order_number} freigegeben!`);
-    await loadOrders();
+    load();
     if (selected?.id === o.id) openOrder(o.id);
   }
 
   async function saveEdit() {
     if (!selected) return;
     setSavingEd(true);
-    const { error } = await supabase.from('orders').update({
-      status: ed.status,
-      progress: ed.progress,
-      status_tag: ed.tag,
-      internal_notes: ed.internal || null,
+    await supabase.from('orders').update({
+      status: ed.status, progress: ed.progress,
+      status_tag: ed.tag, internal_notes: ed.internal || null,
       updated_at: new Date().toISOString(),
       completed_at: ed.status === 'completed' ? new Date().toISOString() : null,
     }).eq('id', selected.id);
-    if (!error) {
-      await supabase.from('order_timeline').insert({
-        order_id: selected.id,
-        message: `Status: "${ed.tag}" · ${ed.progress}% (${myUsernameRef.current})`,
-        created_by: myIdRef.current,
-      });
-    }
+    await supabase.from('order_timeline').insert({
+      order_id: selected.id,
+      message: `Status aktualisiert: "${ed.tag}" · ${ed.progress}% (von ${myUsername})`,
+      created_by: myId,
+    });
     setSavingEd(false);
-    if (error) { notify('Fehler: ' + error.message, false); return; }
     notify('Gespeichert.');
-    await loadOrders();
+    load();
     openOrder(selected.id);
   }
 
   async function addTimeline() {
     if (!tlMsg.trim() || !selected) return;
     await supabase.from('order_timeline').insert({
-      order_id: selected.id,
-      message: tlMsg,
-      created_by: myIdRef.current,
+      order_id: selected.id, message: tlMsg, created_by: myId,
     });
     setTlMsg('');
     openOrder(selected.id);
   }
 
   async function cancelOrder(o: Order) {
-    if (!confirm(`Auftrag ${o.order_number} stornieren?`)) return;
+    if (!confirm(`Auftrag ${o.order_number} wirklich stornieren?`)) return;
     await supabase.from('orders').update({ status: 'cancelled', status_tag: 'Storniert', progress: 0 }).eq('id', o.id);
-    await supabase.from('order_timeline').insert({
-      order_id: o.id,
-      message: `Storniert von ${myUsernameRef.current}`,
-      created_by: myIdRef.current,
-    });
+    await supabase.from('order_timeline').insert({ order_id: o.id, message: `Auftrag storniert von ${myUsername}`, created_by: myId });
     notify('Storniert.', false);
     setSelected(null);
-    await loadOrders();
+    load();
   }
 
   async function deleteOrder(o: Order) {
@@ -283,19 +243,18 @@ export default function OrdersManagementPage() {
     await supabase.from('orders').delete().eq('id', o.id);
     notify('Gelöscht.', false);
     setSelected(null);
-    await loadOrders();
+    load();
   }
 
-  async function toggleAccess(orderId: string, userId: string) {
-    const order = orders.find(o => o.id === orderId);
-    if (!order) return;
+  async function toggleAccess(order: Order, userId: string) {
     const current = order.allowed_user_ids || [];
     const updated = current.includes(userId)
       ? current.filter(id => id !== userId)
       : [...current, userId];
-    await supabase.from('orders').update({ allowed_user_ids: updated }).eq('id', orderId);
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, allowed_user_ids: updated } : o));
-    if (selected?.id === orderId) setSelected(prev => prev ? { ...prev, allowed_user_ids: updated } : null);
+    await supabase.from('orders').update({ allowed_user_ids: updated }).eq('id', order.id);
+    setAccessOrder(prev => prev ? { ...prev, allowed_user_ids: updated } : null);
+    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, allowed_user_ids: updated } : o));
+    if (selected?.id === order.id) setSelected(prev => prev ? { ...prev, allowed_user_ids: updated } : null);
   }
 
   async function toggleShowStaffOrders(userId: string, current: boolean) {
@@ -303,17 +262,15 @@ export default function OrdersManagementPage() {
     await supabase.from('profiles').update({ show_staff_orders: !current }).eq('id', userId);
     setAllProfiles(prev => prev.map(p => p.id === userId ? { ...p, show_staff_orders: !current } : p));
     setTogglingUser(null);
-    notify(!current ? 'Staff-Orders Tab aktiviert.' : 'Tab deaktiviert.', !current);
+    notify(!current ? 'Staff-Orders Tab aktiviert.' : 'Staff-Orders Tab deaktiviert.', !current);
   }
 
   const filtered = orders.filter(o => {
-    if (activeTab === 'active') { if (!['approved', 'in_progress'].includes(o.status)) return false; }
+    if (activeTab === 'active') { if (!['approved','in_progress'].includes(o.status)) return false; }
     else if (activeTab !== 'all') { if (o.status !== activeTab) return false; }
     if (search) {
       const q = search.toLowerCase();
-      return o.order_number.toLowerCase().includes(q)
-        || o.customer_name.toLowerCase().includes(q)
-        || o.product_name.toLowerCase().includes(q);
+      return o.order_number.toLowerCase().includes(q) || o.customer_name.toLowerCase().includes(q) || o.product_name.toLowerCase().includes(q);
     }
     return true;
   });
@@ -321,17 +278,16 @@ export default function OrdersManagementPage() {
   const counts = {
     all: orders.length,
     pending_approval: orders.filter(o => o.status === 'pending_approval').length,
-    active: orders.filter(o => ['approved', 'in_progress'].includes(o.status)).length,
+    active: orders.filter(o => ['approved','in_progress'].includes(o.status)).length,
     completed: orders.filter(o => o.status === 'completed').length,
     cancelled: orders.filter(o => o.status === 'cancelled').length,
   };
 
-  const accessOrder = orders.find(o => o.id === accessOrderId) || null;
-  const filteredProfiles = allProfiles.filter(p =>
+  const accessFilteredProfiles = allProfiles.filter(p =>
     !accessSearch || p.username.toLowerCase().includes(accessSearch.toLowerCase())
   );
 
-  if (myRole !== null && !isTopManagement) {
+  if (!isTopManagement && myRole !== null) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
@@ -363,11 +319,11 @@ export default function OrdersManagementPage() {
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowAccess(true)}
-            className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-sm font-medium px-4 py-2.5 rounded-xl transition-all">
+            className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-gray-300 text-sm font-medium px-4 py-2.5 rounded-xl transition-all">
             🔑 Zugriffssteuerung
           </button>
           <button onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-all">
+            className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-all">
             + Neuer Auftrag
           </button>
         </div>
@@ -408,15 +364,17 @@ export default function OrdersManagementPage() {
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${activeTab === t.key ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
               {t.label}
               {counts[t.key as keyof typeof counts] > 0 && (
-                <span className={`ml-1.5 ${activeTab === t.key ? 'text-gray-300' : 'text-gray-600'}`}>
+                <span className={`ml-1.5 text-xs ${activeTab === t.key ? 'text-gray-300' : 'text-gray-600'}`}>
                   {counts[t.key as keyof typeof counts]}
                 </span>
               )}
             </button>
           ))}
         </div>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Suche..."
-          className="flex-1 min-w-48 bg-[#1a1d27] border border-white/[0.07] rounded-xl px-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/20" />
+        <div className="flex-1 min-w-48 relative">
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Suche..."
+            className="w-full bg-[#1a1d27] border border-white/[0.07] rounded-xl pl-4 pr-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/20" />
+        </div>
       </div>
 
       {/* Orders List */}
@@ -424,7 +382,7 @@ export default function OrdersManagementPage() {
         <div className="text-gray-600 text-center py-16 text-sm">Lade...</div>
       ) : filtered.length === 0 ? (
         <div className="bg-[#1a1d27] border border-white/[0.07] rounded-2xl py-16 text-center">
-          <p className="text-gray-500 text-sm">Keine Aufträge.</p>
+          <p className="text-gray-500 text-sm">Keine Aufträge in dieser Kategorie.</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -435,7 +393,7 @@ export default function OrdersManagementPage() {
                 className="group bg-[#1a1d27] border border-white/[0.07] hover:border-white/[0.15] rounded-2xl px-5 py-4 cursor-pointer transition-all hover:bg-[#1e2132]">
                 <div className="flex items-center gap-4">
                   <div className="relative flex-shrink-0">
-                    <ProgressRing value={['pending_approval', 'cancelled'].includes(o.status) ? 0 : o.progress} size={48} />
+                    <ProgressRing value={['pending_approval','cancelled'].includes(o.status) ? 0 : o.progress} size={48} />
                     <div className="absolute inset-0 flex items-center justify-center">
                       <span className={`text-xs font-bold ${sc.text}`}>
                         {o.status === 'pending_approval' ? '?' : o.status === 'cancelled' ? '✕' : `${o.progress}%`}
@@ -485,57 +443,28 @@ export default function OrdersManagementPage() {
               <div>
                 <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">Kunde</p>
                 <div className="space-y-2">
-                  <input
-                    value={cf.name}
-                    onChange={e => setCf(p => ({ ...p, name: e.target.value }))}
-                    placeholder="Kundenname *"
-                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25"
-                  />
+                  <input value={cf.name} onChange={e => setCf(p => ({...p, name: e.target.value}))} placeholder="Kundenname *"
+                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25" />
                   <div className="grid grid-cols-2 gap-2">
-                    <input
-                      value={cf.discord}
-                      onChange={e => setCf(p => ({ ...p, discord: e.target.value }))}
-                      placeholder="Discord"
-                      className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25"
-                    />
-                    <input
-                      value={cf.email}
-                      onChange={e => setCf(p => ({ ...p, email: e.target.value }))}
-                      placeholder="E-Mail"
-                      className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25"
-                    />
+                    <input value={cf.discord} onChange={e => setCf(p => ({...p, discord: e.target.value}))} placeholder="Discord"
+                      className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25" />
+                    <input value={cf.email} onChange={e => setCf(p => ({...p, email: e.target.value}))} placeholder="E-Mail"
+                      className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25" />
                   </div>
                 </div>
               </div>
               <div>
                 <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">Produkt</p>
                 <div className="space-y-2">
-                  <input
-                    value={cf.product}
-                    onChange={e => setCf(p => ({ ...p, product: e.target.value }))}
-                    placeholder="Produktname / Leistung *"
-                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25"
-                  />
-                  <textarea
-                    value={cf.desc}
-                    onChange={e => setCf(p => ({ ...p, desc: e.target.value }))}
-                    placeholder="Beschreibung..."
-                    rows={2}
-                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25 resize-none"
-                  />
+                  <input value={cf.product} onChange={e => setCf(p => ({...p, product: e.target.value}))} placeholder="Produktname / Leistung *"
+                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25" />
+                  <textarea value={cf.desc} onChange={e => setCf(p => ({...p, desc: e.target.value}))} placeholder="Beschreibung..." rows={2}
+                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25 resize-none" />
                   <div className="flex gap-2">
-                    <input
-                      type="number"
-                      value={cf.price}
-                      onChange={e => setCf(p => ({ ...p, price: e.target.value }))}
-                      placeholder="Preis"
-                      className="flex-1 bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25"
-                    />
-                    <select
-                      value={cf.currency}
-                      onChange={e => setCf(p => ({ ...p, currency: e.target.value }))}
-                      className="w-28 bg-white/5 border border-white/[0.08] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none"
-                    >
+                    <input type="number" value={cf.price} onChange={e => setCf(p => ({...p, price: e.target.value}))} placeholder="Preis"
+                      className="flex-1 bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25" />
+                    <select value={cf.currency} onChange={e => setCf(p => ({...p, currency: e.target.value}))}
+                      className="w-28 bg-white/5 border border-white/[0.08] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-white/25">
                       <option>EUR</option><option>USD</option><option>Robux</option><option>Coins</option>
                     </select>
                   </div>
@@ -544,34 +473,16 @@ export default function OrdersManagementPage() {
               <div>
                 <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">Notizen</p>
                 <div className="space-y-2">
-                  <textarea
-                    value={cf.notes}
-                    onChange={e => setCf(p => ({ ...p, notes: e.target.value }))}
-                    placeholder="Für den Mitarbeiter sichtbar..."
-                    rows={2}
-                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25 resize-none"
-                  />
-                  <textarea
-                    value={cf.internal}
-                    onChange={e => setCf(p => ({ ...p, internal: e.target.value }))}
-                    placeholder="🔒 Interne Notiz (nur Top Management)..."
-                    rows={2}
-                    className="w-full bg-amber-950/20 border border-amber-500/20 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-amber-500/40 resize-none"
-                  />
+                  <textarea value={cf.notes} onChange={e => setCf(p => ({...p, notes: e.target.value}))} placeholder="Für Kunden sichtbar..." rows={2}
+                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25 resize-none" />
+                  <textarea value={cf.internal} onChange={e => setCf(p => ({...p, internal: e.target.value}))} placeholder="Interne Notiz (nur Staff)..." rows={2}
+                    className="w-full bg-amber-950/20 border border-amber-500/20 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-amber-500/40 resize-none" />
                 </div>
               </div>
               <div className="flex gap-2 pt-1">
-                <button
-                  onClick={() => setShowCreate(false)}
-                  className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 text-sm transition"
-                >
-                  Abbrechen
-                </button>
-                <button
-                  onClick={createOrder}
-                  disabled={saving || !cf.name.trim() || !cf.product.trim()}
-                  className="flex-1 py-2.5 rounded-xl bg-white text-gray-900 font-semibold text-sm hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
-                >
+                <button onClick={() => setShowCreate(false)} className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 text-sm transition">Abbrechen</button>
+                <button onClick={createOrder} disabled={saving || !cf.name.trim() || !cf.product.trim()}
+                  className="flex-1 py-2.5 rounded-xl bg-white text-gray-900 font-semibold text-sm hover:bg-gray-100 disabled:opacity-30 transition">
                   {saving ? 'Erstelle...' : 'Auftrag erstellen →'}
                 </button>
               </div>
@@ -587,71 +498,84 @@ export default function OrdersManagementPage() {
             <div className="px-7 py-5 border-b border-white/[0.07] flex items-center justify-between">
               <div>
                 <h2 className="text-white font-bold text-lg">🔑 Zugriffssteuerung</h2>
-                <p className="text-gray-500 text-xs mt-0.5">Tab aktivieren & Auftrags-Zugriff verwalten</p>
+                <p className="text-gray-500 text-xs mt-0.5">Schalte Staff-Orders Tab für Mitglieder frei</p>
               </div>
-              <button onClick={() => { setShowAccess(false); setAccessOrderId(''); setAccessSearch(''); }}
+              <button onClick={() => { setShowAccess(false); setAccessOrder(null); setAccessSearch(''); }}
                 className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition">✕</button>
             </div>
+
+            {/* Order selector */}
             <div className="px-7 py-4 border-b border-white/[0.07]">
-              <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-2">Auftrag wählen</p>
+              <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">Auftrag wählen (für Einzel-Zugriff)</p>
               <select
-                value={accessOrderId}
-                onChange={e => setAccessOrderId(e.target.value)}
-                className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-3 py-2 text-white text-sm focus:outline-none"
-              >
-                <option value="">— Nur Tab-Zugriff verwalten —</option>
+                value={accessOrder?.id || ''}
+                onChange={e => {
+                  const o = orders.find(x => x.id === e.target.value) || null;
+                  setAccessOrder(o);
+                }}
+                className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-white/25">
+                <option value="">— Kein Auftrag ausgewählt (nur Tab-Zugriff verwalten) —</option>
                 {orders.filter(o => o.status !== 'cancelled').map(o => (
-                  <option key={o.id} value={o.id}>{o.order_number} · {o.product_name}</option>
+                  <option key={o.id} value={o.id}>{o.order_number} · {o.product_name} · {o.customer_name}</option>
                 ))}
               </select>
             </div>
-            <div className="px-7 py-3 border-b border-white/[0.07]">
+
+            <div className="px-7 py-4 border-b border-white/[0.07]">
               <input value={accessSearch} onChange={e => setAccessSearch(e.target.value)} placeholder="Mitglied suchen..."
-                className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none" />
+                className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25" />
             </div>
-            <div className="overflow-y-auto flex-1 px-7 py-3">
-              <div className="flex justify-end gap-6 text-xs text-gray-600 font-semibold uppercase tracking-wider pr-3 mb-2">
-                <span>Tab</span>
-                {accessOrderId && <span>Auftrag</span>}
-              </div>
-              {filteredProfiles.map(p => {
-                const hasOrderAccess = accessOrder ? (accessOrder.allowed_user_ids || []).includes(p.id) : false;
-                return (
-                  <div key={p.id} className="flex items-center justify-between px-2 py-2.5 hover:bg-white/[0.02] rounded-xl transition">
-                    <div className="flex items-center gap-3">
-                      <div className="w-7 h-7 bg-gradient-to-br from-blue-500/30 to-violet-500/30 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                        {p.username.charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="text-white text-sm font-medium">{p.username}</p>
-                        <p className="text-gray-600 text-xs">{p.role}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-5">
-                      <button
-                        onClick={() => toggleShowStaffOrders(p.id, p.show_staff_orders)}
-                        disabled={togglingUser === p.id}
-                        className={`relative w-10 h-5 rounded-full transition-all flex-shrink-0 ${p.show_staff_orders ? 'bg-blue-600' : 'bg-white/10'} ${togglingUser === p.id ? 'opacity-50' : ''}`}
-                      >
-                        <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${p.show_staff_orders ? 'left-5' : 'left-0.5'}`} />
-                      </button>
-                      {accessOrderId && (
-                        <button
-                          onClick={() => toggleAccess(accessOrderId, p.id)}
-                          className={`relative w-10 h-5 rounded-full transition-all flex-shrink-0 ${hasOrderAccess ? 'bg-emerald-600' : 'bg-white/10'}`}
-                        >
-                          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${hasOrderAccess ? 'left-5' : 'left-0.5'}`} />
-                        </button>
-                      )}
-                    </div>
+
+            <div className="overflow-y-auto flex-1">
+              <div className="px-7 py-3">
+                <div className="grid grid-cols-2 gap-1 text-xs text-gray-600 font-semibold uppercase tracking-wider px-2 mb-2">
+                  <span>Mitglied</span>
+                  <div className="flex justify-end gap-8 pr-1">
+                    <span>Tab</span>
+                    {accessOrder && <span>Auftrag</span>}
                   </div>
-                );
-              })}
+                </div>
+                {accessFilteredProfiles.map(p => {
+                  const hasOrderAccess = accessOrder ? (accessOrder.allowed_user_ids || []).includes(p.id) : false;
+                  return (
+                    <div key={p.id} className="flex items-center justify-between px-2 py-2.5 hover:bg-white/[0.02] rounded-xl transition">
+                      <div className="flex items-center gap-3">
+                        <div className="w-7 h-7 bg-gradient-to-br from-blue-500/30 to-violet-500/30 rounded-full flex items-center justify-center text-white text-xs font-bold">
+                          {p.username.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-white text-sm font-medium">{p.username}</p>
+                          <p className="text-gray-600 text-xs">{p.role}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-6">
+                        {/* show_staff_orders toggle */}
+                        <button
+                          onClick={() => toggleShowStaffOrders(p.id, p.show_staff_orders)}
+                          disabled={togglingUser === p.id}
+                          className={`relative w-10 h-5 rounded-full transition-all ${p.show_staff_orders ? 'bg-blue-600' : 'bg-white/10'} ${togglingUser === p.id ? 'opacity-50' : ''}`}>
+                          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${p.show_staff_orders ? 'left-5' : 'left-0.5'}`} />
+                        </button>
+
+                        {/* Per-order access toggle */}
+                        {accessOrder && (
+                          <button
+                            onClick={() => toggleAccess(accessOrder, p.id)}
+                            className={`relative w-10 h-5 rounded-full transition-all ${hasOrderAccess ? 'bg-emerald-600' : 'bg-white/10'}`}>
+                            <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${hasOrderAccess ? 'left-5' : 'left-0.5'}`} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-            <div className="px-7 py-4 border-t border-white/[0.07]">
+
+            <div className="px-7 py-4 border-t border-white/[0.07] bg-[#13151f]">
               <div className="flex items-center gap-4 text-xs text-gray-600">
                 <div className="flex items-center gap-1.5"><div className="w-4 h-2.5 bg-blue-600 rounded-full" /><span>Tab sichtbar</span></div>
-                {accessOrderId && <div className="flex items-center gap-1.5"><div className="w-4 h-2.5 bg-emerald-600 rounded-full" /><span>Auftragszugriff</span></div>}
+                {accessOrder && <div className="flex items-center gap-1.5"><div className="w-4 h-2.5 bg-emerald-600 rounded-full" /><span>Auftragszugriff</span></div>}
               </div>
             </div>
           </div>
@@ -664,11 +588,12 @@ export default function OrdersManagementPage() {
         return (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
             <div className="bg-[#13151f] border border-white/[0.08] rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+              {/* Header */}
               <div className="p-6 border-b border-white/[0.07]">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-4">
                     <div className="relative flex-shrink-0 mt-1">
-                      <ProgressRing value={['pending_approval', 'cancelled'].includes(selected.status) ? 0 : selected.progress} size={64} />
+                      <ProgressRing value={['pending_approval','cancelled'].includes(selected.status) ? 0 : selected.progress} size={64} />
                       <div className="absolute inset-0 flex items-center justify-center">
                         <span className={`text-sm font-bold ${sc.text}`}>
                           {selected.status === 'pending_approval' ? '?' : selected.status === 'cancelled' ? '✕' : `${selected.progress}%`}
@@ -704,24 +629,23 @@ export default function OrdersManagementPage() {
               </div>
 
               <div className="p-6 space-y-5">
+                {/* Quick access toggle for this order */}
                 <div className="bg-white/[0.02] border border-white/[0.06] rounded-2xl p-4">
-                  <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">🔑 Auftragszugriff ({(selected.allowed_user_ids || []).length})</p>
+                  <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">🔑 Auftragszugriff ({(selected.allowed_user_ids || []).length} Personen)</p>
                   <div className="flex flex-wrap gap-2 mb-3">
                     {(selected.allowed_user_ids || []).map(uid => {
                       const u = allProfiles.find(p => p.id === uid);
                       return u ? (
                         <div key={uid} className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs px-2.5 py-1 rounded-full">
                           {u.username}
-                          <button onClick={() => toggleAccess(selected.id, uid)} className="hover:text-red-400 transition ml-1">✕</button>
+                          <button onClick={() => toggleAccess(selected, uid)} className="hover:text-red-400 transition">✕</button>
                         </div>
                       ) : null;
                     })}
                     {(selected.allowed_user_ids || []).length === 0 && <p className="text-gray-600 text-xs">Noch niemand hat Zugriff.</p>}
                   </div>
-                  <select
-                    onChange={e => { if (e.target.value) { toggleAccess(selected.id, e.target.value); e.target.value = ''; } }}
-                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-3 py-2 text-white text-sm focus:outline-none"
-                  >
+                  <select onChange={e => { if (e.target.value) { toggleAccess(selected, e.target.value); e.target.value = ''; }}}
+                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-white/25">
                     <option value="">+ Person hinzufügen...</option>
                     {allProfiles.filter(p => !(selected.allowed_user_ids || []).includes(p.id)).map(p => (
                       <option key={p.id} value={p.id}>{p.username} ({p.role})</option>
@@ -731,7 +655,7 @@ export default function OrdersManagementPage() {
 
                 {selected.notes && (
                   <div className="bg-blue-950/20 border border-blue-500/10 rounded-2xl p-4">
-                    <p className="text-blue-400 text-xs mb-2 font-medium">📋 Notiz</p>
+                    <p className="text-blue-400 text-xs mb-2 font-medium">📋 Kundennotiz</p>
                     <p className="text-gray-300 text-sm">{selected.notes}</p>
                   </div>
                 )}
@@ -742,6 +666,7 @@ export default function OrdersManagementPage() {
                   </div>
                 )}
 
+                {/* Timeline */}
                 {timeline.length > 0 && (
                   <div>
                     <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-4">Verlauf</p>
@@ -750,11 +675,11 @@ export default function OrdersManagementPage() {
                         <div key={t.id} className="flex gap-4">
                           <div className="flex flex-col items-center w-4 flex-shrink-0">
                             <div className={`w-2 h-2 rounded-full mt-1.5 ring-2 ring-[#13151f] ${i === timeline.length - 1 ? 'bg-blue-500' : 'bg-white/20'}`} />
-                            {i < timeline.length - 1 && <div className="w-px flex-1 bg-white/[0.06] mt-1.5" style={{ minHeight: '20px' }} />}
+                            {i < timeline.length - 1 && <div className="w-px flex-1 bg-white/[0.06] mt-1.5" style={{minHeight:'20px'}} />}
                           </div>
                           <div className="pb-3 flex-1">
                             <p className="text-gray-300 text-xs">{t.message}</p>
-                            <p className="text-gray-700 text-xs mt-0.5">{t.author?.username} · {new Date(t.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
+                            <p className="text-gray-700 text-xs mt-0.5">{t.author?.username} · {new Date(t.created_at).toLocaleString('de-DE', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</p>
                           </div>
                         </div>
                       ))}
@@ -762,21 +687,24 @@ export default function OrdersManagementPage() {
                   </div>
                 )}
 
+                {/* Edit */}
                 {selected.status !== 'cancelled' && (
                   <div className="border-t border-white/[0.07] pt-5 space-y-4">
                     <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Bearbeiten</p>
+
                     {selected.status === 'pending_approval' && (
                       <button onClick={() => approveOrder(selected)}
                         className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-2xl transition text-sm">
                         ✓ Auftrag freigeben
                       </button>
                     )}
+
                     {selected.status !== 'pending_approval' && (
                       <>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="text-gray-500 text-xs mb-2 block">Status</label>
-                            <select value={ed.status} onChange={e => setEd(p => ({ ...p, status: e.target.value as Order['status'] }))}
+                            <select value={ed.status} onChange={e => setEd(p => ({...p, status: e.target.value as Order['status']}))}
                               className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none">
                               <option value="approved">Freigegeben</option>
                               <option value="in_progress">In Bearbeitung</option>
@@ -786,13 +714,13 @@ export default function OrdersManagementPage() {
                           <div>
                             <label className="text-gray-500 text-xs mb-2 block">Fortschritt: <span className="text-white font-bold">{ed.progress}%</span></label>
                             <input type="range" min={0} max={100} step={5} value={ed.progress}
-                              onChange={e => setEd(p => ({ ...p, progress: parseInt(e.target.value) }))}
+                              onChange={e => setEd(p => ({...p, progress: parseInt(e.target.value)}))}
                               className="w-full accent-blue-500 mt-1.5" />
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          {[0, 10, 25, 50, 75, 90, 100].map(p => (
-                            <button key={p} onClick={() => setEd(prev => ({ ...prev, progress: p }))}
+                          {[0,10,25,50,75,90,100].map(p => (
+                            <button key={p} onClick={() => setEd(prev => ({...prev, progress: p}))}
                               className={`text-xs px-2.5 py-1 rounded-lg border transition ${ed.progress === p ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'bg-white/5 text-gray-500 border-white/[0.08] hover:text-white'}`}>
                               {p}%
                             </button>
@@ -802,16 +730,16 @@ export default function OrdersManagementPage() {
                           <label className="text-gray-500 text-xs mb-2 block">Status-Tag</label>
                           <div className="flex flex-wrap gap-2 mb-2">
                             {PRESET_TAGS.map(tag => (
-                              <button key={tag} onClick={() => setEd(p => ({ ...p, tag }))}
+                              <button key={tag} onClick={() => setEd(p => ({...p, tag}))}
                                 className={`text-xs px-3 py-1.5 rounded-xl border transition ${ed.tag === tag ? 'bg-white/10 text-white border-white/20' : 'bg-white/[0.03] text-gray-500 border-white/[0.07] hover:text-gray-300'}`}>
                                 {tag}
                               </button>
                             ))}
                           </div>
-                          <input value={ed.tag} onChange={e => setEd(p => ({ ...p, tag: e.target.value }))} placeholder="Eigener Tag..."
+                          <input value={ed.tag} onChange={e => setEd(p => ({...p, tag: e.target.value}))} placeholder="Eigener Tag..."
                             className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25" />
                         </div>
-                        <textarea value={ed.internal} onChange={e => setEd(p => ({ ...p, internal: e.target.value }))} rows={2}
+                        <textarea value={ed.internal} onChange={e => setEd(p => ({...p, internal: e.target.value}))} rows={2}
                           placeholder="🔒 Interne Notiz..."
                           className="w-full bg-amber-950/20 border border-amber-500/20 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none resize-none" />
                         <button onClick={saveEdit} disabled={savingEd}
@@ -820,13 +748,15 @@ export default function OrdersManagementPage() {
                         </button>
                       </>
                     )}
+
                     <div className="flex gap-2">
                       <input value={tlMsg} onChange={e => setTlMsg(e.target.value)} onKeyDown={e => e.key === 'Enter' && addTimeline()}
-                        placeholder="Verlaufseintrag hinzufügen..."
+                        placeholder="Verlaufseintrag..."
                         className="flex-1 bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25" />
                       <button onClick={addTimeline} disabled={!tlMsg.trim()}
                         className="px-4 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm transition disabled:opacity-30">+</button>
                     </div>
+
                     <div className="flex gap-2">
                       <button onClick={() => cancelOrder(selected)}
                         className="flex-1 py-2.5 rounded-xl bg-red-950/30 hover:bg-red-950/50 text-red-400 border border-red-500/20 text-sm transition">Stornieren</button>
