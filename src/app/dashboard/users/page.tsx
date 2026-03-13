@@ -328,6 +328,17 @@ export default function UsersPage() {
                             className="bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
                             Passwort
                           </button>
+                          {isTopManagement && user.id !== myId && (
+                        <button
+                          onClick={async () => {
+                            await supabase.from('profiles').update({ show_staff_orders: !(user as any).show_staff_orders }).eq('id', user.id);
+                            load();
+                          }}
+                          title="Staff-Orders Tab"
+                          className={`relative w-10 h-5 rounded-full transition-all flex-shrink-0 ${(user as any).show_staff_orders ? 'bg-blue-600' : 'bg-white/10'}`}>
+                          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${(user as any).show_staff_orders ? 'left-5' : 'left-0.5'}`} />
+                        </button>
+                      )}
                           {user.is_active ? (
                             <button onClick={() => openModal(user, 'deactivate')}
                               className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">

@@ -107,21 +107,18 @@ export default function Sidebar({ profile }: SidebarProps) {
       icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z',
       show: isStaffRole || profile.role.includes('moderator'),
     },
-    // AUFTRÄGE (nur Top Management):
-{
-  href: '/dashboard/orders',
-  label: 'Aufträge',
-  icon: 'M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z',
-  show: profile.role === 'top_management',
-},
- 
-// STAFF-ORDERS (für alle bei denen show_staff_orders = true ist):
-{
-  href: '/dashboard/staff-orders',
-  label: 'Staff-Orders',
-  icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
-  show: isStaffRole,
-},
+   {  
+      href: '/dashboard/orders',
+      label: 'Aufträge',
+      icon: 'M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z',
+      show: profile.role === 'top_management',
+    },
+    {
+      href: '/dashboard/staff-orders',
+      label: 'Staff-Orders',
+      icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
+      show: (profile as any).show_staff_orders === true,
+    },
   ];
 
   const visibleItems = navItems.filter(i => i.show);
