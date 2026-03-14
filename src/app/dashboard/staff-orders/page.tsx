@@ -58,42 +58,22 @@ function ProgressRing({ value, size = 80 }: { value: number; size?: number }) {
 
 export default function StaffOrdersPage() {
   const supabase = createClientSupabaseClient();
-  const myIdRef = useRef('');
 
-  const [input, setInput]             = useState('');
-  const [order, setOrder]             = useState<Order | null>(null);
-  const [timeline, setTimeline]       = useState<TimelineEntry[]>([]);
-  const [loading, setLoading]         = useState(false);
-  const [initLoading, setInitLoading] = useState(true);
-  const [error, setError]             = useState('');
-  const [myOrders, setMyOrders]       = useState<Order[]>([]);
-
-  useEffect(() => {
-    async function init() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setInitLoading(false); return; }
-      myIdRef.current = user.id;
-
-      const { data } = await supabase
-        .from('orders')
-        .select('id, order_number, customer_name, product_name, product_description, price, currency, status, progress, status_tag, notes, created_at, approved_at, completed_at')
-        .neq('status', 'pending_approval')
-        .order('created_at', { ascending: false });
-
-      setMyOrders(data || []);
-      setInitLoading(false);
-    }
-    init();
-  }, []);
+  const [input, setInput]           = useState('');
+  const [order, setOrder]           = useState<Order | null>(null);
+  const [timeline, setTimeline]     = useState<TimelineEntry[]>([]);
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState('');
 
   async function lookup() {
     const q = input.trim().toUpperCase();
-    if (!q || !myIdRef.current) return;
+    if (!q) return;
     setLoading(true);
     setError('');
     setOrder(null);
     setTimeline([]);
 
+    // Nur Auftragsnummer wird geprüft – kein User-Check
     const { data } = await supabase
       .from('orders')
       .select('id, order_number, customer_name, product_name, product_description, price, currency, status, progress, status_tag, notes, created_at, approved_at, completed_at')
@@ -102,30 +82,24 @@ export default function StaffOrdersPage() {
       .single();
 
     if (!data) {
-      setError('Kein Auftrag gefunden oder kein Zugriff. Wende dich ans Management.');
+      setError('Kein Auftrag mit dieser Nummer gefunden.');
       setLoading(false);
       return;
     }
 
-    await openOrder(data);
-    setLoading(false);
-  }
+    setOrder(data);
 
-  async function openOrder(o: Order) {
-    setOrder(o);
     const { data: tl } = await supabase
       .from('order_timeline')
       .select('id, message, created_at')
-      .eq('order_id', o.id)
+      .eq('order_id', data.id)
       .order('created_at', { ascending: true });
+
     setTimeline(tl || []);
+    setLoading(false);
   }
 
   const sc = order ? (STATUS_CONFIG[order.status] || STATUS_CONFIG['approved']) : null;
-
-  if (initLoading) {
-    return <div className="text-gray-500 text-center py-16 text-sm">Lade...</div>;
-  }
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -135,7 +109,7 @@ export default function StaffOrdersPage() {
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600/20 to-violet-600/20 border border-white/10 flex items-center justify-center text-base">◈</div>
           <h1 className="text-2xl font-bold text-white tracking-tight">Staff-Orders</h1>
         </div>
-        <p className="text-gray-500 text-sm ml-12">Deine freigeschalteten Aufträge</p>
+        <p className="text-gray-500 text-sm ml-12">Auftragsnummer eingeben um den Status deiner Bestellung zu sehen</p>
       </div>
 
       {/* Search */}
@@ -163,63 +137,29 @@ export default function StaffOrdersPage() {
         </div>
       )}
 
-      {/* My Orders List */}
-      {!order && myOrders.length > 0 && (
-        <div>
-          <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">Deine Aufträge</p>
-          <div className="space-y-2">
-            {myOrders.map(o => {
-              const s = STATUS_CONFIG[o.status] || STATUS_CONFIG['approved'];
-              return (
-                <div key={o.id} onClick={() => openOrder(o)}
-                  className="group bg-[#1a1d27] border border-white/[0.07] hover:border-white/[0.15] rounded-2xl px-5 py-4 cursor-pointer transition-all hover:bg-[#1e2132]">
-                  <div className="flex items-center gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="text-white font-bold text-sm tracking-widest font-mono">{o.order_number}</span>
-                        <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${s.bg} ${s.border} ${s.text}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
-                          {s.label}
-                        </span>
-                      </div>
-                      <p className="text-white text-sm font-medium truncate">{o.product_name}</p>
-                      <p className="text-gray-500 text-xs mt-0.5">{o.status_tag}</p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                      <span className="text-white text-sm font-bold">{o.progress}%</span>
-                      <div className="w-20 bg-white/[0.06] rounded-full h-1.5">
-                        <div className={`h-1.5 rounded-full transition-all ${o.progress === 100 ? 'bg-emerald-500' : 'bg-blue-500'}`}
-                          style={{ width: `${o.progress}%` }} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {!order && myOrders.length === 0 && (
+      {/* Leerer Zustand */}
+      {!order && !error && (
         <div className="bg-[#1a1d27] border border-white/[0.07] rounded-2xl py-12 text-center">
           <p className="text-3xl mb-3 opacity-30">◈</p>
-          <p className="text-gray-400 font-medium mb-1">Keine Aufträge</p>
-          <p className="text-gray-600 text-sm">Du hast noch keine freigeschalteten Aufträge.</p>
+          <p className="text-gray-400 font-medium mb-1">Auftrag suchen</p>
+          <p className="text-gray-600 text-sm">Gib deine Auftragsnummer ein um den Bestellstatus zu sehen.</p>
         </div>
       )}
 
       {/* Order Detail */}
       {order && sc && (
         <div className="space-y-4">
-          <button onClick={() => { setOrder(null); setTimeline([]); setInput(''); }}
+          <button onClick={() => { setOrder(null); setTimeline([]); setInput(''); setError(''); }}
             className="flex items-center gap-2 text-gray-500 hover:text-white text-sm transition">
             ← Zurück
           </button>
 
+          {/* Main Card */}
           <div className="bg-[#1a1d27] border border-white/[0.07] rounded-3xl overflow-hidden">
             <div className={`h-1 w-full ${order.status === 'completed' ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : order.status === 'cancelled' ? 'bg-red-600' : 'bg-gradient-to-r from-blue-500 to-violet-500'}`} />
 
             <div className="p-6">
+              {/* Header */}
               <div className="flex items-start gap-5 mb-6">
                 <div className="relative flex-shrink-0">
                   <ProgressRing value={order.status === 'cancelled' ? 0 : order.progress} size={80} />
@@ -240,6 +180,7 @@ export default function StaffOrdersPage() {
                 </div>
               </div>
 
+              {/* Fortschritt */}
               {order.status !== 'cancelled' && (
                 <div className="mb-6">
                   <div className="flex justify-between items-center mb-2">
@@ -250,6 +191,7 @@ export default function StaffOrdersPage() {
                     <div className={`h-full rounded-full transition-all duration-1000 ${order.progress === 100 ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-blue-500 to-violet-500'}`}
                       style={{ width: `${order.progress}%` }} />
                   </div>
+                  {/* Milestones */}
                   <div className="flex justify-between">
                     {MILESTONES.map(m => {
                       const done = order.progress >= m.p;
@@ -267,6 +209,7 @@ export default function StaffOrdersPage() {
                 </div>
               )}
 
+              {/* Status Pulse */}
               {order.status !== 'cancelled' && order.status !== 'completed' && (
                 <div className="flex items-center gap-2 bg-white/[0.03] border border-white/[0.05] rounded-xl px-4 py-3">
                   <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse flex-shrink-0" />
@@ -275,6 +218,7 @@ export default function StaffOrdersPage() {
               )}
             </div>
 
+            {/* Info Grid */}
             <div className="px-6 pb-6 grid grid-cols-2 gap-3">
               <div className="bg-white/[0.02] rounded-2xl p-4 border border-white/[0.05]">
                 <p className="text-gray-600 text-xs mb-1">Bestellt am</p>
@@ -287,8 +231,8 @@ export default function StaffOrdersPage() {
                 </div>
               ) : (
                 <div className="bg-white/[0.02] rounded-2xl p-4 border border-white/[0.05]">
-                  <p className="text-gray-600 text-xs mb-1">Kunde</p>
-                  <p className="text-gray-300 text-sm font-medium truncate">{order.customer_name}</p>
+                  <p className="text-gray-600 text-xs mb-1">Produkt</p>
+                  <p className="text-gray-300 text-sm font-medium truncate">{order.product_name}</p>
                 </div>
               )}
             </div>
@@ -308,6 +252,7 @@ export default function StaffOrdersPage() {
             )}
           </div>
 
+          {/* Timeline */}
           {timeline.length > 0 && (
             <div className="bg-[#1a1d27] border border-white/[0.07] rounded-3xl p-6">
               <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-5">Verlauf</p>
