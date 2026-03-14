@@ -77,7 +77,6 @@ export default function StaffOrdersPage() {
       const { data } = await supabase
         .from('orders')
         .select('id, order_number, customer_name, product_name, product_description, price, currency, status, progress, status_tag, notes, created_at, approved_at, completed_at')
-        .contains('allowed_user_ids', [user.id])
         .neq('status', 'pending_approval')
         .order('created_at', { ascending: false });
 
@@ -100,7 +99,6 @@ export default function StaffOrdersPage() {
       .select('id, order_number, customer_name, product_name, product_description, price, currency, status, progress, status_tag, notes, created_at, approved_at, completed_at')
       .eq('order_number', q)
       .neq('status', 'pending_approval')
-      .contains('allowed_user_ids', [myIdRef.current])
       .single();
 
     if (!data) {

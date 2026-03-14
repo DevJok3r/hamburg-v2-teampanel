@@ -86,11 +86,12 @@ const EMPTY_CF = { name: '', discord: '', email: '', product: '', desc: '', pric
 export default function OrdersManagementPage() {
   const supabase = createClientSupabaseClient();
 
-  // Use refs for values needed inside async callbacks to avoid stale closures
   const myIdRef       = useRef('');
   const myUsernameRef = useRef('');
+  const myDeptsRef    = useRef<string[]>([]);
 
   const [myRole, setMyRole]           = useState<UserRole | null>(null);
+  const [myDepts, setMyDepts]         = useState<string[]>([]);
   const [orders, setOrders]           = useState<Order[]>([]);
   const [allProfiles, setAllProfiles] = useState<StaffProfile[]>([]);
   const [loading, setLoading]         = useState(true);
@@ -140,13 +141,15 @@ export default function OrdersManagementPage() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('role, username')
+        .select('role, username, departments')
         .eq('id', user.id)
         .single();
 
       if (profile) {
         setMyRole(profile.role as UserRole);
         myUsernameRef.current = profile.username;
+        myDeptsRef.current = profile.departments || [];
+        setMyDepts(profile.departments || []);
       }
 
       await Promise.all([loadOrders(), loadProfiles()]);
@@ -156,6 +159,15 @@ export default function OrdersManagementPage() {
   }, []);
 
   const isTopManagement = myRole === 'top_management';
+
+  // Top Management kann alles. Junior/Management mit Development Team können Status/Tag/Fortschritt bearbeiten.
+  const canEdit = isTopManagement || (
+    ['junior_management', 'management'].includes(myRole || '') &&
+    myDepts.includes('development_team')
+  );
+
+  // Nur Top Management kann Aufträge erstellen, freigeben, stornieren, löschen
+  const canCreate = isTopManagement;
 
   async function openOrder(id: string) {
     const { data: o } = await supabase
@@ -177,10 +189,7 @@ export default function OrdersManagementPage() {
 
   async function createOrder() {
     if (!cf.name.trim() || !cf.product.trim()) return;
-    if (!myIdRef.current) {
-      notify('Fehler: Nicht eingeloggt.', false);
-      return;
-    }
+    if (!myIdRef.current) { notify('Fehler: Nicht eingeloggt.', false); return; }
     setSaving(true);
     const { error } = await supabase.from('orders').insert({
       order_number: generateOrderNumber(),
@@ -200,10 +209,7 @@ export default function OrdersManagementPage() {
       allowed_user_ids: [],
     });
     setSaving(false);
-    if (error) {
-      notify('Fehler: ' + error.message, false);
-      return;
-    }
+    if (error) { notify('Fehler: ' + error.message, false); return; }
     setShowCreate(false);
     setCf({ ...EMPTY_CF });
     notify('Auftrag erstellt.');
@@ -331,13 +337,14 @@ export default function OrdersManagementPage() {
     !accessSearch || p.username.toLowerCase().includes(accessSearch.toLowerCase())
   );
 
-  if (myRole !== null && !isTopManagement) {
+  // Kein Zugriff wenn weder Top Management noch canEdit
+  if (myRole !== null && !canEdit) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <p className="text-4xl mb-3">🔒</p>
           <p className="text-white font-medium mb-1">Kein Zugriff</p>
-          <p className="text-gray-500 text-sm">Nur Top Management kann Aufträge verwalten.</p>
+          <p className="text-gray-500 text-sm">Nur Top Management und Development Team können Aufträge verwalten.</p>
         </div>
       </div>
     );
@@ -362,14 +369,18 @@ export default function OrdersManagementPage() {
           <p className="text-gray-500 text-sm ml-12">Bestellverwaltung · {orders.length} Aufträge</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setShowAccess(true)}
-            className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-sm font-medium px-4 py-2.5 rounded-xl transition-all">
-            🔑 Zugriffssteuerung
-          </button>
-          <button onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-all">
-            + Neuer Auftrag
-          </button>
+          {isTopManagement && (
+            <button onClick={() => setShowAccess(true)}
+              className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-sm font-medium px-4 py-2.5 rounded-xl transition-all">
+              🔑 Zugriffssteuerung
+            </button>
+          )}
+          {canCreate && (
+            <button onClick={() => setShowCreate(true)}
+              className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-all">
+              + Neuer Auftrag
+            </button>
+          )}
         </div>
       </div>
 
@@ -457,7 +468,6 @@ export default function OrdersManagementPage() {
                     <div className="flex items-center gap-3 mt-0.5">
                       <span className="text-gray-500 text-xs">👤 {o.customer_name}</span>
                       {o.price && <span className="text-emerald-500 text-xs font-medium">{o.price.toFixed(2)} {o.currency}</span>}
-                      <span className="text-gray-700 text-xs">🔑 {(o.allowed_user_ids || []).length} Zugriff</span>
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-2 flex-shrink-0">
@@ -474,7 +484,7 @@ export default function OrdersManagementPage() {
       )}
 
       {/* ══ MODAL: Create ══ */}
-      {showCreate && (
+      {showCreate && canCreate && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
           <div className="bg-[#13151f] border border-white/[0.08] rounded-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
             <div className="px-7 py-5 border-b border-white/[0.07] flex items-center justify-between sticky top-0 bg-[#13151f] z-10">
@@ -485,57 +495,28 @@ export default function OrdersManagementPage() {
               <div>
                 <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">Kunde</p>
                 <div className="space-y-2">
-                  <input
-                    value={cf.name}
-                    onChange={e => setCf(p => ({ ...p, name: e.target.value }))}
-                    placeholder="Kundenname *"
-                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25"
-                  />
+                  <input value={cf.name} onChange={e => setCf(p => ({ ...p, name: e.target.value }))} placeholder="Kundenname *"
+                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25" />
                   <div className="grid grid-cols-2 gap-2">
-                    <input
-                      value={cf.discord}
-                      onChange={e => setCf(p => ({ ...p, discord: e.target.value }))}
-                      placeholder="Discord"
-                      className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25"
-                    />
-                    <input
-                      value={cf.email}
-                      onChange={e => setCf(p => ({ ...p, email: e.target.value }))}
-                      placeholder="E-Mail"
-                      className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25"
-                    />
+                    <input value={cf.discord} onChange={e => setCf(p => ({ ...p, discord: e.target.value }))} placeholder="Discord"
+                      className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25" />
+                    <input value={cf.email} onChange={e => setCf(p => ({ ...p, email: e.target.value }))} placeholder="E-Mail"
+                      className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25" />
                   </div>
                 </div>
               </div>
               <div>
                 <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">Produkt</p>
                 <div className="space-y-2">
-                  <input
-                    value={cf.product}
-                    onChange={e => setCf(p => ({ ...p, product: e.target.value }))}
-                    placeholder="Produktname / Leistung *"
-                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25"
-                  />
-                  <textarea
-                    value={cf.desc}
-                    onChange={e => setCf(p => ({ ...p, desc: e.target.value }))}
-                    placeholder="Beschreibung..."
-                    rows={2}
-                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25 resize-none"
-                  />
+                  <input value={cf.product} onChange={e => setCf(p => ({ ...p, product: e.target.value }))} placeholder="Produktname / Leistung *"
+                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25" />
+                  <textarea value={cf.desc} onChange={e => setCf(p => ({ ...p, desc: e.target.value }))} placeholder="Beschreibung..." rows={2}
+                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25 resize-none" />
                   <div className="flex gap-2">
-                    <input
-                      type="number"
-                      value={cf.price}
-                      onChange={e => setCf(p => ({ ...p, price: e.target.value }))}
-                      placeholder="Preis"
-                      className="flex-1 bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25"
-                    />
-                    <select
-                      value={cf.currency}
-                      onChange={e => setCf(p => ({ ...p, currency: e.target.value }))}
-                      className="w-28 bg-white/5 border border-white/[0.08] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none"
-                    >
+                    <input type="number" value={cf.price} onChange={e => setCf(p => ({ ...p, price: e.target.value }))} placeholder="Preis"
+                      className="flex-1 bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25" />
+                    <select value={cf.currency} onChange={e => setCf(p => ({ ...p, currency: e.target.value }))}
+                      className="w-28 bg-white/5 border border-white/[0.08] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none">
                       <option>EUR</option><option>USD</option><option>Robux</option><option>Coins</option>
                     </select>
                   </div>
@@ -544,34 +525,16 @@ export default function OrdersManagementPage() {
               <div>
                 <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">Notizen</p>
                 <div className="space-y-2">
-                  <textarea
-                    value={cf.notes}
-                    onChange={e => setCf(p => ({ ...p, notes: e.target.value }))}
-                    placeholder="Für den Mitarbeiter sichtbar..."
-                    rows={2}
-                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25 resize-none"
-                  />
-                  <textarea
-                    value={cf.internal}
-                    onChange={e => setCf(p => ({ ...p, internal: e.target.value }))}
-                    placeholder="🔒 Interne Notiz (nur Top Management)..."
-                    rows={2}
-                    className="w-full bg-amber-950/20 border border-amber-500/20 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-amber-500/40 resize-none"
-                  />
+                  <textarea value={cf.notes} onChange={e => setCf(p => ({ ...p, notes: e.target.value }))} placeholder="Für den Mitarbeiter sichtbar..." rows={2}
+                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25 resize-none" />
+                  <textarea value={cf.internal} onChange={e => setCf(p => ({ ...p, internal: e.target.value }))} placeholder="🔒 Interne Notiz (nur Top Management)..." rows={2}
+                    className="w-full bg-amber-950/20 border border-amber-500/20 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-amber-500/40 resize-none" />
                 </div>
               </div>
               <div className="flex gap-2 pt-1">
-                <button
-                  onClick={() => setShowCreate(false)}
-                  className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 text-sm transition"
-                >
-                  Abbrechen
-                </button>
-                <button
-                  onClick={createOrder}
-                  disabled={saving || !cf.name.trim() || !cf.product.trim()}
-                  className="flex-1 py-2.5 rounded-xl bg-white text-gray-900 font-semibold text-sm hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
-                >
+                <button onClick={() => setShowCreate(false)} className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 text-sm transition">Abbrechen</button>
+                <button onClick={createOrder} disabled={saving || !cf.name.trim() || !cf.product.trim()}
+                  className="flex-1 py-2.5 rounded-xl bg-white text-gray-900 font-semibold text-sm hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition">
                   {saving ? 'Erstelle...' : 'Auftrag erstellen →'}
                 </button>
               </div>
@@ -581,77 +544,49 @@ export default function OrdersManagementPage() {
       )}
 
       {/* ══ MODAL: Access Control ══ */}
-      {showAccess && (
+      {showAccess && isTopManagement && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
           <div className="bg-[#13151f] border border-white/[0.08] rounded-3xl w-full max-w-xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl">
             <div className="px-7 py-5 border-b border-white/[0.07] flex items-center justify-between">
               <div>
                 <h2 className="text-white font-bold text-lg">🔑 Zugriffssteuerung</h2>
-                <p className="text-gray-500 text-xs mt-0.5">Tab aktivieren & Auftrags-Zugriff verwalten</p>
+                <p className="text-gray-500 text-xs mt-0.5">Staff-Orders Tab für Mitglieder freischalten</p>
               </div>
               <button onClick={() => { setShowAccess(false); setAccessOrderId(''); setAccessSearch(''); }}
                 className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition">✕</button>
-            </div>
-            <div className="px-7 py-4 border-b border-white/[0.07]">
-              <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-2">Auftrag wählen</p>
-              <select
-                value={accessOrderId}
-                onChange={e => setAccessOrderId(e.target.value)}
-                className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-3 py-2 text-white text-sm focus:outline-none"
-              >
-                <option value="">— Nur Tab-Zugriff verwalten —</option>
-                {orders.filter(o => o.status !== 'cancelled').map(o => (
-                  <option key={o.id} value={o.id}>{o.order_number} · {o.product_name}</option>
-                ))}
-              </select>
             </div>
             <div className="px-7 py-3 border-b border-white/[0.07]">
               <input value={accessSearch} onChange={e => setAccessSearch(e.target.value)} placeholder="Mitglied suchen..."
                 className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2 text-white placeholder-gray-600 text-sm focus:outline-none" />
             </div>
             <div className="overflow-y-auto flex-1 px-7 py-3">
-              <div className="flex justify-end gap-6 text-xs text-gray-600 font-semibold uppercase tracking-wider pr-3 mb-2">
+              <div className="flex justify-end text-xs text-gray-600 font-semibold uppercase tracking-wider pr-3 mb-2">
                 <span>Tab</span>
-                {accessOrderId && <span>Auftrag</span>}
               </div>
-              {filteredProfiles.map(p => {
-                const hasOrderAccess = accessOrder ? (accessOrder.allowed_user_ids || []).includes(p.id) : false;
-                return (
-                  <div key={p.id} className="flex items-center justify-between px-2 py-2.5 hover:bg-white/[0.02] rounded-xl transition">
-                    <div className="flex items-center gap-3">
-                      <div className="w-7 h-7 bg-gradient-to-br from-blue-500/30 to-violet-500/30 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                        {p.username.charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="text-white text-sm font-medium">{p.username}</p>
-                        <p className="text-gray-600 text-xs">{p.role}</p>
-                      </div>
+              {filteredProfiles.map(p => (
+                <div key={p.id} className="flex items-center justify-between px-2 py-2.5 hover:bg-white/[0.02] rounded-xl transition">
+                  <div className="flex items-center gap-3">
+                    <div className="w-7 h-7 bg-gradient-to-br from-blue-500/30 to-violet-500/30 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                      {p.username.charAt(0).toUpperCase()}
                     </div>
-                    <div className="flex items-center gap-5">
-                      <button
-                        onClick={() => toggleShowStaffOrders(p.id, p.show_staff_orders)}
-                        disabled={togglingUser === p.id}
-                        className={`relative w-10 h-5 rounded-full transition-all flex-shrink-0 ${p.show_staff_orders ? 'bg-blue-600' : 'bg-white/10'} ${togglingUser === p.id ? 'opacity-50' : ''}`}
-                      >
-                        <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${p.show_staff_orders ? 'left-5' : 'left-0.5'}`} />
-                      </button>
-                      {accessOrderId && (
-                        <button
-                          onClick={() => toggleAccess(accessOrderId, p.id)}
-                          className={`relative w-10 h-5 rounded-full transition-all flex-shrink-0 ${hasOrderAccess ? 'bg-emerald-600' : 'bg-white/10'}`}
-                        >
-                          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${hasOrderAccess ? 'left-5' : 'left-0.5'}`} />
-                        </button>
-                      )}
+                    <div>
+                      <p className="text-white text-sm font-medium">{p.username}</p>
+                      <p className="text-gray-600 text-xs">{p.role}</p>
                     </div>
                   </div>
-                );
-              })}
+                  <button
+                    onClick={() => toggleShowStaffOrders(p.id, p.show_staff_orders)}
+                    disabled={togglingUser === p.id}
+                    className={`relative w-10 h-5 rounded-full transition-all flex-shrink-0 ${p.show_staff_orders ? 'bg-blue-600' : 'bg-white/10'} ${togglingUser === p.id ? 'opacity-50' : ''}`}
+                  >
+                    <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${p.show_staff_orders ? 'left-5' : 'left-0.5'}`} />
+                  </button>
+                </div>
+              ))}
             </div>
             <div className="px-7 py-4 border-t border-white/[0.07]">
-              <div className="flex items-center gap-4 text-xs text-gray-600">
-                <div className="flex items-center gap-1.5"><div className="w-4 h-2.5 bg-blue-600 rounded-full" /><span>Tab sichtbar</span></div>
-                {accessOrderId && <div className="flex items-center gap-1.5"><div className="w-4 h-2.5 bg-emerald-600 rounded-full" /><span>Auftragszugriff</span></div>}
+              <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                <div className="w-4 h-2.5 bg-blue-600 rounded-full" /><span>Tab sichtbar</span>
               </div>
             </div>
           </div>
@@ -704,30 +639,31 @@ export default function OrdersManagementPage() {
               </div>
 
               <div className="p-6 space-y-5">
-                <div className="bg-white/[0.02] border border-white/[0.06] rounded-2xl p-4">
-                  <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">🔑 Auftragszugriff ({(selected.allowed_user_ids || []).length})</p>
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {(selected.allowed_user_ids || []).map(uid => {
-                      const u = allProfiles.find(p => p.id === uid);
-                      return u ? (
-                        <div key={uid} className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs px-2.5 py-1 rounded-full">
-                          {u.username}
-                          <button onClick={() => toggleAccess(selected.id, uid)} className="hover:text-red-400 transition ml-1">✕</button>
-                        </div>
-                      ) : null;
-                    })}
-                    {(selected.allowed_user_ids || []).length === 0 && <p className="text-gray-600 text-xs">Noch niemand hat Zugriff.</p>}
+                {/* Auftragszugriff – nur Top Management */}
+                {isTopManagement && (
+                  <div className="bg-white/[0.02] border border-white/[0.06] rounded-2xl p-4">
+                    <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">🔑 Auftragszugriff ({(selected.allowed_user_ids || []).length})</p>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {(selected.allowed_user_ids || []).map(uid => {
+                        const u = allProfiles.find(p => p.id === uid);
+                        return u ? (
+                          <div key={uid} className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs px-2.5 py-1 rounded-full">
+                            {u.username}
+                            <button onClick={() => toggleAccess(selected.id, uid)} className="hover:text-red-400 transition ml-1">✕</button>
+                          </div>
+                        ) : null;
+                      })}
+                      {(selected.allowed_user_ids || []).length === 0 && <p className="text-gray-600 text-xs">Noch niemand hat Zugriff.</p>}
+                    </div>
+                    <select onChange={e => { if (e.target.value) { toggleAccess(selected.id, e.target.value); e.target.value = ''; } }}
+                      className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-3 py-2 text-white text-sm focus:outline-none">
+                      <option value="">+ Person hinzufügen...</option>
+                      {allProfiles.filter(p => !(selected.allowed_user_ids || []).includes(p.id)).map(p => (
+                        <option key={p.id} value={p.id}>{p.username} ({p.role})</option>
+                      ))}
+                    </select>
                   </div>
-                  <select
-                    onChange={e => { if (e.target.value) { toggleAccess(selected.id, e.target.value); e.target.value = ''; } }}
-                    className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-3 py-2 text-white text-sm focus:outline-none"
-                  >
-                    <option value="">+ Person hinzufügen...</option>
-                    {allProfiles.filter(p => !(selected.allowed_user_ids || []).includes(p.id)).map(p => (
-                      <option key={p.id} value={p.id}>{p.username} ({p.role})</option>
-                    ))}
-                  </select>
-                </div>
+                )}
 
                 {selected.notes && (
                   <div className="bg-blue-950/20 border border-blue-500/10 rounded-2xl p-4">
@@ -735,7 +671,7 @@ export default function OrdersManagementPage() {
                     <p className="text-gray-300 text-sm">{selected.notes}</p>
                   </div>
                 )}
-                {selected.internal_notes && (
+                {isTopManagement && selected.internal_notes && (
                   <div className="bg-amber-950/20 border border-amber-500/20 rounded-2xl p-4">
                     <p className="text-amber-400 text-xs mb-2 font-medium">🔒 Interne Notiz</p>
                     <p className="text-gray-300 text-sm">{selected.internal_notes}</p>
@@ -762,15 +698,19 @@ export default function OrdersManagementPage() {
                   </div>
                 )}
 
-                {selected.status !== 'cancelled' && (
+                {/* Bearbeiten – für canEdit (Top Management + Dev Team) */}
+                {selected.status !== 'cancelled' && canEdit && (
                   <div className="border-t border-white/[0.07] pt-5 space-y-4">
                     <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Bearbeiten</p>
-                    {selected.status === 'pending_approval' && (
+
+                    {/* Freigeben nur Top Management */}
+                    {selected.status === 'pending_approval' && isTopManagement && (
                       <button onClick={() => approveOrder(selected)}
                         className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-2xl transition text-sm">
                         ✓ Auftrag freigeben
                       </button>
                     )}
+
                     {selected.status !== 'pending_approval' && (
                       <>
                         <div className="grid grid-cols-2 gap-3">
@@ -811,15 +751,18 @@ export default function OrdersManagementPage() {
                           <input value={ed.tag} onChange={e => setEd(p => ({ ...p, tag: e.target.value }))} placeholder="Eigener Tag..."
                             className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-white/25" />
                         </div>
-                        <textarea value={ed.internal} onChange={e => setEd(p => ({ ...p, internal: e.target.value }))} rows={2}
-                          placeholder="🔒 Interne Notiz..."
-                          className="w-full bg-amber-950/20 border border-amber-500/20 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none resize-none" />
+                        {isTopManagement && (
+                          <textarea value={ed.internal} onChange={e => setEd(p => ({ ...p, internal: e.target.value }))} rows={2}
+                            placeholder="🔒 Interne Notiz..."
+                            className="w-full bg-amber-950/20 border border-amber-500/20 rounded-xl px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none resize-none" />
+                        )}
                         <button onClick={saveEdit} disabled={savingEd}
                           className="w-full py-3 rounded-2xl bg-white text-gray-900 font-bold text-sm hover:bg-gray-100 disabled:opacity-30 transition">
                           {savingEd ? 'Speichern...' : 'Speichern'}
                         </button>
                       </>
                     )}
+
                     <div className="flex gap-2">
                       <input value={tlMsg} onChange={e => setTlMsg(e.target.value)} onKeyDown={e => e.key === 'Enter' && addTimeline()}
                         placeholder="Verlaufseintrag hinzufügen..."
@@ -827,12 +770,16 @@ export default function OrdersManagementPage() {
                       <button onClick={addTimeline} disabled={!tlMsg.trim()}
                         className="px-4 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm transition disabled:opacity-30">+</button>
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => cancelOrder(selected)}
-                        className="flex-1 py-2.5 rounded-xl bg-red-950/30 hover:bg-red-950/50 text-red-400 border border-red-500/20 text-sm transition">Stornieren</button>
-                      <button onClick={() => deleteOrder(selected)}
-                        className="flex-1 py-2.5 rounded-xl bg-red-950/30 hover:bg-red-950/50 text-red-400 border border-red-500/20 text-sm transition">Löschen</button>
-                    </div>
+
+                    {/* Stornieren/Löschen nur Top Management */}
+                    {isTopManagement && (
+                      <div className="flex gap-2">
+                        <button onClick={() => cancelOrder(selected)}
+                          className="flex-1 py-2.5 rounded-xl bg-red-950/30 hover:bg-red-950/50 text-red-400 border border-red-500/20 text-sm transition">Stornieren</button>
+                        <button onClick={() => deleteOrder(selected)}
+                          className="flex-1 py-2.5 rounded-xl bg-red-950/30 hover:bg-red-950/50 text-red-400 border border-red-500/20 text-sm transition">Löschen</button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
