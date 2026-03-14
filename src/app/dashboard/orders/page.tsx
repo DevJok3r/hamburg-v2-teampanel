@@ -640,62 +640,6 @@ export default function OrdersManagementPage() {
               </div>
 
               <div className="p-6 space-y-5">
-                {/* Auftragszugriff – nur Top Management */}
-                {isTopManagement && (
-                  <div className="bg-white/[0.02] border border-white/[0.06] rounded-2xl p-4">
-                    <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">🔑 Auftragszugriff ({(selected.allowed_user_ids || []).length})</p>
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      {(selected.allowed_user_ids || []).map(uid => {
-                        const u = allProfiles.find(p => p.id === uid);
-                        return u ? (
-                          <div key={uid} className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs px-2.5 py-1 rounded-full">
-                            {u.username}
-                            <button onClick={() => toggleAccess(selected.id, uid)} className="hover:text-red-400 transition ml-1">✕</button>
-                          </div>
-                        ) : null;
-                      })}
-                      {(selected.allowed_user_ids || []).length === 0 && <p className="text-gray-600 text-xs">Noch niemand hat Zugriff.</p>}
-                    </div>
-                     <div className="relative">
-                      <button
-                        onClick={() => setShowPersonPicker(prev => !prev)}
-                        className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-3 py-2 text-gray-400 text-sm text-left hover:bg-white/10 transition">
-                        + Person hinzufügen...
-                      </button>
-                      {showPersonPicker && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-[#1a1d27] border border-white/[0.12] rounded-xl overflow-hidden z-10 max-h-48 overflow-y-auto shadow-2xl">
-                          {allProfiles.filter(p => !(selected.allowed_user_ids || []).includes(p.id)).map(p => (
-                            <button key={p.id}
-                              onClick={() => { toggleAccess(selected.id, p.id); setShowPersonPicker(false); }}
-                              className="w-full text-left px-4 py-2.5 text-white text-sm hover:bg-white/10 transition flex items-center gap-2">
-                              <div className="w-6 h-6 bg-gradient-to-br from-blue-500/30 to-violet-500/30 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                                {p.username.charAt(0).toUpperCase()}
-                              </div>
-                              <span>{p.username}</span>
-                              <span className="text-gray-500 text-xs ml-auto">{p.role}</span>
-                            </button>
-                          ))}
-                          {allProfiles.filter(p => !(selected.allowed_user_ids || []).includes(p.id)).length === 0 && (
-                            <p className="text-gray-500 text-sm px-4 py-3">Alle haben bereits Zugriff.</p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {selected.notes && (
-                  <div className="bg-blue-950/20 border border-blue-500/10 rounded-2xl p-4">
-                    <p className="text-blue-400 text-xs mb-2 font-medium">📋 Notiz</p>
-                    <p className="text-gray-300 text-sm">{selected.notes}</p>
-                  </div>
-                )}
-                {isTopManagement && selected.internal_notes && (
-                  <div className="bg-amber-950/20 border border-amber-500/20 rounded-2xl p-4">
-                    <p className="text-amber-400 text-xs mb-2 font-medium">🔒 Interne Notiz</p>
-                    <p className="text-gray-300 text-sm">{selected.internal_notes}</p>
-                  </div>
-                )}
 
                 {timeline.length > 0 && (
                   <div>
