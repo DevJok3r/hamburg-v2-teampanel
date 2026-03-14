@@ -127,9 +127,10 @@ const DEPARTMENTS: Record<string, DeptConfig> = {
         { key: 'alone_or_team',    label: 'Arbeitest du lieber alleine oder im Team?', type: 'textarea', required: true, placeholder: 'Begründe deine Präferenz...' },
         { key: 'disagreement',     label: 'Ein Teammitglied hat eine andere Lösungsidee als du – wie würdest du reagieren?', type: 'textarea', required: true, placeholder: 'Deine Reaktion bei unterschiedlichen Meinungen...' },
       ]},
-      { title: 'Abschluss', fields: [
+        { title: 'Abschluss', fields: [
         { key: 'extra_info',      label: 'Gibt es noch etwas, das du uns mitteilen möchtest?', type: 'textarea', required: false, placeholder: 'Weitere Informationen (optional)...' },
         { key: 'time_motivation', label: 'Bist du dir sicher, dass du die Zeit & Motivation hast, aktiv im Development Team mitzuarbeiten?', type: 'yesno', required: true },
+        { key: 'rules_accepted',  label: 'Bist du mit den Regeln von Hamburg V2 einverstanden und bereit, diese einzuhalten?', type: 'yesno', required: true },
       ]},
     ],
   },
