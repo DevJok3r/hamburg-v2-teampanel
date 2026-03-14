@@ -107,7 +107,8 @@ const DEPARTMENTS: Record<string, DeptConfig> = {
     intro: 'Herzlich willkommen in der Development Team Application für Hamburg V2!\n\nWir freuen uns sehr, dass du Interesse hast, unser Development Team zu unterstützen.\n\nBitte beachte vor dem Ausfüllen:\n• Antworte auf alle Fragen sachlich & ehrlich.\n• Solltest du innerhalb von 7 Tagen keine Rückmeldung erhalten, gilt die Bewerbung als abgelehnt.\n• Stelle sicher, dass deine Discord-DMs öffentlich sind.\n• Nur angenommene Bewerber werden zu einem Gespräch eingeladen.\n\nViel Erfolg! 🚀',
     sections: [
       { title: 'Persönliche Informationen', fields: [
-        { key: 'first_name',   label: 'Vorname & Alter',          type: 'text', required: true, placeholder: 'z.B. Max, 17 Jahre...' },
+        { key: 'first_name',   label: 'Vorname',   type: 'text',   required: true, placeholder: 'Dein Vorname...' },
+        { key: 'age',          label: 'Alter',      type: 'number', required: true, placeholder: 'Dein Alter...' },
         { key: 'roblox_name',  label: 'Roblox Name',               type: 'text', required: true, placeholder: 'Dein Roblox Benutzername...' },
         { key: 'discord_name', label: 'Discord Name & Discord ID', type: 'text', required: true, placeholder: 'z.B. username | 123456789012345678...' },
       ]},
