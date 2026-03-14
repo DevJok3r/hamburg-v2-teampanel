@@ -109,6 +109,7 @@ export default function OrdersManagementPage() {
   const [ed, setEd]                   = useState({ progress: 0, tag: '', status: 'approved' as Order['status'], internal: '' });
   const [tlMsg, setTlMsg]             = useState('');
   const [savingEd, setSavingEd]       = useState(false);
+  const [showPersonPicker, setShowPersonPicker] = useState(false);
   const [togglingUser, setTogglingUser] = useState<string | null>(null);
 
   function notify(msg: string, ok = true) {
@@ -655,13 +656,31 @@ export default function OrdersManagementPage() {
                       })}
                       {(selected.allowed_user_ids || []).length === 0 && <p className="text-gray-600 text-xs">Noch niemand hat Zugriff.</p>}
                     </div>
-                    <select onChange={e => { if (e.target.value) { toggleAccess(selected.id, e.target.value); e.target.value = ''; } }}
-                      className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-3 py-2 text-white text-sm focus:outline-none">
-                      <option value="">+ Person hinzufügen...</option>
-                      {allProfiles.filter(p => !(selected.allowed_user_ids || []).includes(p.id)).map(p => (
-                        <option key={p.id} value={p.id}>{p.username} ({p.role})</option>
-                      ))}
-                    </select>
+                     <div className="relative">
+                      <button
+                        onClick={() => setShowPersonPicker(prev => !prev)}
+                        className="w-full bg-white/5 border border-white/[0.08] rounded-xl px-3 py-2 text-gray-400 text-sm text-left hover:bg-white/10 transition">
+                        + Person hinzufügen...
+                      </button>
+                      {showPersonPicker && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-[#1a1d27] border border-white/[0.12] rounded-xl overflow-hidden z-10 max-h-48 overflow-y-auto shadow-2xl">
+                          {allProfiles.filter(p => !(selected.allowed_user_ids || []).includes(p.id)).map(p => (
+                            <button key={p.id}
+                              onClick={() => { toggleAccess(selected.id, p.id); setShowPersonPicker(false); }}
+                              className="w-full text-left px-4 py-2.5 text-white text-sm hover:bg-white/10 transition flex items-center gap-2">
+                              <div className="w-6 h-6 bg-gradient-to-br from-blue-500/30 to-violet-500/30 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                                {p.username.charAt(0).toUpperCase()}
+                              </div>
+                              <span>{p.username}</span>
+                              <span className="text-gray-500 text-xs ml-auto">{p.role}</span>
+                            </button>
+                          ))}
+                          {allProfiles.filter(p => !(selected.allowed_user_ids || []).includes(p.id)).length === 0 && (
+                            <p className="text-gray-500 text-sm px-4 py-3">Alle haben bereits Zugriff.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
