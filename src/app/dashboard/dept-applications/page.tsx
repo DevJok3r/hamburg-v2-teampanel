@@ -205,7 +205,7 @@ export default function DeptApplicationsPage() {
     });
   }
 
-    async function saveForm() {
+  async function saveForm() {
     if (!fbTitle.trim() || fbQuestions.length === 0) return;
     setSavingForm(true);
     const { data: { user } } = await supabase.auth.getUser();
