@@ -205,13 +205,25 @@ export default function DeptApplicationsPage() {
     });
   }
 
-  async function saveForm() {
+    async function saveForm() {
     if (!fbTitle.trim() || fbQuestions.length === 0) return;
     setSavingForm(true);
-    const payload = { title: fbTitle, department: fbDept || 'Allgemein', description: fbDesc||null, questions: fbQuestions, allowed_roles: fbAllowedRoles, created_by: myId };
-    if (editingForm) { await supabase.from('custom_forms').update(payload).eq('id', editingForm.id); }
-    else { await supabase.from('custom_forms').insert({ ...payload, is_active: true }); }
-    setShowFormBuilder(false); setSavingForm(false); showMsg('✅ Formular gespeichert.'); load();
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id || myId;
+    const payload = { title: fbTitle, department: fbDept || 'Allgemein', description: fbDesc||null, questions: fbQuestions, allowed_roles: fbAllowedRoles, created_by: userId };
+    let error;
+    if (editingForm) {
+      const res = await supabase.from('custom_forms').update(payload).eq('id', editingForm.id);
+      error = res.error;
+    } else {
+      const res = await supabase.from('custom_forms').insert({ ...payload, is_active: true });
+      error = res.error;
+    }
+    setSavingForm(false);
+    if (error) { showMsg('Fehler: ' + error.message, false); return; }
+    setShowFormBuilder(false);
+    showMsg('✅ Formular gespeichert.');
+    await load();
   }
 
   async function deleteForm(id: string) {

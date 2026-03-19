@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createClientSupabaseClient } from '@/lib/supabase/client';
 import { UserRole } from '@/types';
-import { isStaff } from '@/lib/permissions';
 
 interface Todo {
   id: string;
@@ -31,27 +30,27 @@ interface Profile {
 }
 
 const PRIORITY_CONFIG = {
-  high:   { label: 'Hoch',    color: 'text-red-400 bg-red-500/10 border-red-500/30',       dot: 'bg-red-400' },
+  high:   { label: 'Hoch',    color: 'text-red-400 bg-red-500/10 border-red-500/30',          dot: 'bg-red-400' },
   medium: { label: 'Mittel',  color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30', dot: 'bg-yellow-400' },
-  low:    { label: 'Niedrig', color: 'text-green-400 bg-green-500/10 border-green-500/30',   dot: 'bg-green-400' },
+  low:    { label: 'Niedrig', color: 'text-green-400 bg-green-500/10 border-green-500/30',    dot: 'bg-green-400' },
 };
 
 const STATUS_CONFIG = {
-  open:        { label: 'Offen',           icon: '○',  color: 'text-gray-400 bg-gray-500/10 border-gray-500/30',     next: 'in_progress' },
-  in_progress: { label: 'In Bearbeitung',  icon: '◐',  color: 'text-blue-400 bg-blue-500/10 border-blue-500/30',     next: 'review' },
-  review:      { label: 'Zur Überprüfung', icon: '◑',  color: 'text-purple-400 bg-purple-500/10 border-purple-500/30', next: 'done' },
-  done:        { label: 'Erledigt',        icon: '●',  color: 'text-green-400 bg-green-500/10 border-green-500/30',   next: 'open' },
+  open:        { label: 'Offen',           icon: '○', color: 'text-gray-400 bg-gray-500/10 border-gray-500/30',       next: 'in_progress' },
+  in_progress: { label: 'In Bearbeitung',  icon: '◐', color: 'text-blue-400 bg-blue-500/10 border-blue-500/30',       next: 'review' },
+  review:      { label: 'Zur Überprüfung', icon: '◑', color: 'text-purple-400 bg-purple-500/10 border-purple-500/30', next: 'done' },
+  done:        { label: 'Erledigt',        icon: '●', color: 'text-green-400 bg-green-500/10 border-green-500/30',    next: 'open' },
 };
 
 const COLORS = [
-  { key: 'blue',   label: 'Blau',    bg: 'bg-blue-500',   border: 'border-blue-500/50' },
-  { key: 'purple', label: 'Lila',    bg: 'bg-purple-500', border: 'border-purple-500/50' },
-  { key: 'green',  label: 'Grün',    bg: 'bg-green-500',  border: 'border-green-500/50' },
-  { key: 'red',    label: 'Rot',     bg: 'bg-red-500',    border: 'border-red-500/50' },
-  { key: 'orange', label: 'Orange',  bg: 'bg-orange-500', border: 'border-orange-500/50' },
-  { key: 'pink',   label: 'Pink',    bg: 'bg-pink-500',   border: 'border-pink-500/50' },
-  { key: 'cyan',   label: 'Cyan',    bg: 'bg-cyan-500',   border: 'border-cyan-500/50' },
-  { key: 'yellow', label: 'Gelb',    bg: 'bg-yellow-500', border: 'border-yellow-500/50' },
+  { key: 'blue',   label: 'Blau',   bg: 'bg-blue-500',   border: 'border-blue-500/50' },
+  { key: 'purple', label: 'Lila',   bg: 'bg-purple-500', border: 'border-purple-500/50' },
+  { key: 'green',  label: 'Grün',   bg: 'bg-green-500',  border: 'border-green-500/50' },
+  { key: 'red',    label: 'Rot',    bg: 'bg-red-500',    border: 'border-red-500/50' },
+  { key: 'orange', label: 'Orange', bg: 'bg-orange-500', border: 'border-orange-500/50' },
+  { key: 'pink',   label: 'Pink',   bg: 'bg-pink-500',   border: 'border-pink-500/50' },
+  { key: 'cyan',   label: 'Cyan',   bg: 'bg-cyan-500',   border: 'border-cyan-500/50' },
+  { key: 'yellow', label: 'Gelb',   bg: 'bg-yellow-500', border: 'border-yellow-500/50' },
 ];
 
 const COLOR_BORDER: Record<string, string> = {
@@ -96,14 +95,12 @@ export default function TodosPage() {
 
     const { data } = await supabase
       .from('todos')
-      .select(`*, profiles!todos_user_id_fkey(username), assigned_profile:profiles!todos_assigned_to_fkey(username)`)
+      .select('*, profiles!todos_user_id_fkey(username), assigned_profile:profiles!todos_assigned_to_fkey(username)')
       .order('created_at', { ascending: false });
     setTodos(data || []);
 
-    if (profile && isStaff(profile.role as UserRole)) {
-      const { data: allMembers } = await supabase.from('profiles').select('id, username, role').eq('is_active', true).order('username');
-      setMembers(allMembers || []);
-    }
+    const { data: allMembers } = await supabase.from('profiles').select('id, username, role').eq('is_active', true).order('username');
+    setMembers(allMembers || []);
     setLoading(false);
   }
 
@@ -153,21 +150,28 @@ export default function TodosPage() {
     setNewTodo(p => ({ ...p, tags: p.tags.filter(t => t !== tag) }));
   }
 
-  const canAssign = myRole ? isStaff(myRole) : false;
-  const canSeeAll = myRole ? isStaff(myRole) : false;
-  const canDelete = myRole ? isStaff(myRole) : false;
+  // Permissions
+  const isTopManagement = myRole === 'top_management';
+  const isStaffRole = myRole ? ['junior_management', 'management', 'top_management'].includes(myRole) : false;
+  const canAssign = isStaffRole;
+  const canDelete = (todo: Todo) => isTopManagement || todo.user_id === myId;
 
-  // Visibility: assigned todos only visible to assigner and assignee
-  const visibleTodos = useMemo(() => todos.filter(t => {
-    if (!t.assigned_to) return true; // not assigned = everyone sees
-    return t.user_id === myId || t.assigned_to === myId || canSeeAll;
-  }), [todos, myId, canSeeAll]);
+  // Sichtbarkeit:
+  // - Top Management sieht ALLES
+  // - Alle anderen sehen nur: eigene Todos + ihnen zugewiesene Todos
+  const visibleTodos = useMemo(() => {
+    if (isTopManagement) return todos;
+    return todos.filter(t => t.user_id === myId || t.assigned_to === myId);
+  }, [todos, myId, isTopManagement]);
 
   const myTodos       = visibleTodos.filter(t => t.user_id === myId && !t.assigned_to);
   const assignedTodos = visibleTodos.filter(t => t.assigned_to === myId);
-  const allTodos      = canSeeAll ? visibleTodos : [...myTodos, ...assignedTodos];
 
-  const displayTodos = activeTab === 'mine' ? myTodos : activeTab === 'assigned' ? assignedTodos : allTodos;
+  const displayTodos = activeTab === 'mine'
+    ? myTodos
+    : activeTab === 'assigned'
+    ? assignedTodos
+    : visibleTodos; // 'all' tab – nur Top Management sieht diesen Tab
 
   const allTags = useMemo(() => {
     const tags = new Set<string>();
@@ -206,7 +210,7 @@ export default function TodosPage() {
         <div className="flex items-start gap-3">
           <button onClick={e => cycleStatus(todo, e)}
             className={`mt-0.5 w-6 h-6 rounded-full border-2 flex-shrink-0 flex items-center justify-center text-xs font-bold transition hover:scale-110 ${status.color}`}
-            title={`Status: ${status.label} → klicken für nächsten`}>
+            title={`Status: ${status.label}`}>
             {status.icon}
           </button>
           <div className="flex-1 min-w-0">
@@ -227,8 +231,11 @@ export default function TodosPage() {
               </div>
             )}
             <div className="flex items-center gap-3 mt-2 flex-wrap">
+              {todo.profiles && isTopManagement && (
+                <span className="text-xs text-gray-500">👤 {todo.profiles.username}</span>
+              )}
               {todo.assigned_profile && (
-                <span className="text-xs text-gray-500">👤 {todo.assigned_profile.username}</span>
+                <span className="text-xs text-gray-500">→ {todo.assigned_profile.username}</span>
               )}
               {todo.due_date && (
                 <span className={`text-xs ${overdue ? 'text-red-400 font-medium' : 'text-gray-500'}`}>
@@ -264,12 +271,12 @@ export default function TodosPage() {
         </button>
       </div>
 
-      {/* TABS */}
+      {/* TABS – "Alle" nur für Top Management */}
       <div className="flex gap-1 bg-[#1a1d27] border border-white/10 rounded-xl p-1">
         {[
           { key: 'mine',     label: 'Meine',          count: myTodos.length },
           { key: 'assigned', label: 'Mir zugewiesen', count: assignedTodos.length },
-          ...(canSeeAll ? [{ key: 'all', label: 'Alle', count: allTodos.length }] : []),
+          ...(isTopManagement ? [{ key: 'all', label: 'Alle', count: visibleTodos.length }] : []),
         ].map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key as any)}
             className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition ${activeTab === t.key ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>
@@ -309,7 +316,7 @@ export default function TodosPage() {
         )}
       </div>
 
-      {/* KANBAN-STYLE COLUMNS */}
+      {/* KANBAN */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {(Object.entries(grouped) as [string, Todo[]][]).map(([statusKey, items]) => {
           const statusCf = STATUS_CONFIG[statusKey as keyof typeof STATUS_CONFIG];
@@ -342,8 +349,6 @@ export default function TodosPage() {
               <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-white text-xl">✕</button>
             </div>
             <div className="p-6 space-y-4">
-
-              {/* Farbe */}
               <div>
                 <label className="text-gray-400 text-xs mb-2 block">Farbe</label>
                 <div className="flex gap-2 flex-wrap">
@@ -353,18 +358,12 @@ export default function TodosPage() {
                   ))}
                 </div>
               </div>
-
-              {/* Titel */}
               <input value={newTodo.title} onChange={e => setNewTodo(p => ({ ...p, title: e.target.value }))}
                 placeholder="Todo Titel..."
                 className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm" />
-
-              {/* Beschreibung */}
               <textarea value={newTodo.description} onChange={e => setNewTodo(p => ({ ...p, description: e.target.value }))}
                 placeholder="Beschreibung (optional)..." rows={3}
                 className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm resize-none" />
-
-              {/* Priorität & Datum */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-gray-400 text-xs mb-1 block">Priorität</label>
@@ -381,8 +380,6 @@ export default function TodosPage() {
                     className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500" />
                 </div>
               </div>
-
-              {/* Tags */}
               <div>
                 <label className="text-gray-400 text-xs mb-2 block">Tags</label>
                 <div className="flex gap-1 flex-wrap mb-2">
@@ -409,8 +406,6 @@ export default function TodosPage() {
                   ))}
                 </div>
               </div>
-
-              {/* Zuweisen */}
               {canAssign && members.length > 0 && (
                 <div>
                   <label className="text-gray-400 text-xs mb-1 block">Zuweisen an</label>
@@ -421,7 +416,6 @@ export default function TodosPage() {
                   </select>
                 </div>
               )}
-
               <div className="flex gap-2 pt-2">
                 <button onClick={() => setShowForm(false)} className="bg-white/5 hover:bg-white/10 text-gray-300 px-4 py-2.5 rounded-lg text-sm transition">Abbrechen</button>
                 <button onClick={addTodo} disabled={!newTodo.title.trim()}
@@ -441,7 +435,7 @@ export default function TodosPage() {
         const priority = PRIORITY_CONFIG[todo.priority];
         const overdue  = isOverdue(todo);
         const colorBorder = COLOR_BORDER[todo.color || 'blue'] || 'border-l-blue-500';
-        const canDel   = canDelete || todo.user_id === myId;
+        const canDel   = canDelete(todo);
 
         return (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -460,7 +454,6 @@ export default function TodosPage() {
                 </div>
                 <button onClick={() => setSelectedTodo(null)} className="text-gray-400 hover:text-white text-xl flex-shrink-0">✕</button>
               </div>
-
               <div className="p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-[#0f1117] rounded-lg p-3">
@@ -492,14 +485,12 @@ export default function TodosPage() {
                     </div>
                   )}
                 </div>
-
                 {todo.description && (
                   <div className="bg-[#0f1117] rounded-lg p-4">
                     <p className="text-gray-500 text-xs mb-2">Beschreibung</p>
                     <p className="text-white text-sm leading-relaxed whitespace-pre-wrap">{todo.description}</p>
                   </div>
                 )}
-
                 {(todo.tags || []).length > 0 && (
                   <div>
                     <p className="text-gray-500 text-xs mb-2">Tags</p>
@@ -510,8 +501,6 @@ export default function TodosPage() {
                     </div>
                   </div>
                 )}
-
-                {/* Status Buttons */}
                 <div>
                   <p className="text-gray-500 text-xs mb-2">Status ändern</p>
                   <div className="grid grid-cols-2 gap-2">
@@ -529,7 +518,6 @@ export default function TodosPage() {
                     ))}
                   </div>
                 </div>
-
                 {canDel && (
                   <button onClick={() => deleteTodo(todo.id)}
                     className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 font-medium py-2.5 rounded-lg text-sm transition">
