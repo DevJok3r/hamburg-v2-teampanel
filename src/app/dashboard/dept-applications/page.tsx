@@ -41,7 +41,7 @@ const FIELD_LABELS: Record<string,Record<string,string>> = {
   event: { first_name:'Name', roblox_name:'Roblox Name', discord_name:'Discord Name', training_team:'Gewähltes Team', team_knowledge:'Wissen über Team', team_experience:'Eigene Erfahrung', discord_id:'Discord ID', training_concept:'Trainingskonzept', good_trainer:'Guter Event Organizer?', age:'Alter', motivation:'Warum geeignet?', has_microphone:'Mikrofon?', hours_per_week:'Stunden/Woche', active_times:'Aktive Zeiten', rules_accepted:'Regelwerk akzeptiert?', extra_info:'Weitere Mitteilungen' },
   development: { first_name:'Vorname & Alter', roblox_name:'Roblox Name', discord_name:'Discord Name & ID', why_you:'Warum Developer?', dev_experience:'Dev-Erfahrung', dev_area:'Bewerbungsbereich', roblox_studio:'Roblox Studio?', years_active:'Jahre aktiv', portfolio:'Projekte Link', handle_criticism:'Umgang mit Kritik', alone_or_team:'Alleine/Team?', disagreement:'Bei Meinungsverschiedenheit', extra_info:'Weitere Mitteilungen', time_motivation:'Zeit & Motivation?' },
 };
-type TabType = 'applications'|'links'|'forms'|'responses';
+type TabType = 'applications'|'links'|'forms'|'responses'|'dept_forms';
 const ROLE_LEVEL: Record<string,number> = { top_management:100, management:80, junior_management:60, senior_moderator:40, senior_developer:40, senior_content:40, senior_event:40, moderator:20, developer:20, content_producer:20, event_organizer:20, trial_moderator:10, trial_developer:10, trial_content:10, trial_event:10 };
 
 export default function DeptApplicationsPage() {
@@ -84,6 +84,13 @@ export default function DeptApplicationsPage() {
   const [selectedResponse, setSelectedResponse]     = useState<CustomFormResponse|null>(null);
   const [responseReviewNote, setResponseReviewNote] = useState('');
   const [filterFormId, setFilterFormId]             = useState('all');
+  // Standard-Formulare (department_forms)
+  const [deptForms, setDeptForms]               = useState<any[]>([]);
+  const [editingDeptForm, setEditingDeptForm]   = useState<any | null>(null);
+  const [deptFormQuestions, setDeptFormQuestions] = useState<any[]>([]);
+  const [deptFormIntro, setDeptFormIntro]       = useState('');
+  const [savingDeptForm, setSavingDeptForm]     = useState(false);
+  const [showDeptFormEditor, setShowDeptFormEditor] = useState(false);
 
   const router   = useRouter();
   const supabase = createClientSupabaseClient();
@@ -105,18 +112,20 @@ export default function DeptApplicationsPage() {
     const access = role === 'top_management' ? Object.keys(DEPT_LABELS) : depts.map(d => deptMap[d]).filter(Boolean);
     setMyAccess(access);
 
-    const [appsRes, phasesRes, formsRes, responsesRes, membersRes] = await Promise.all([
+    const [appsRes, phasesRes, formsRes, responsesRes, membersRes, deptFormsRes] = await Promise.all([
       supabase.from('department_applications').select('*').order('created_at', { ascending: false }),
       supabase.from('application_phases').select('*'),
       supabase.from('custom_forms').select('*').order('created_at', { ascending: false }),
       supabase.from('custom_form_responses').select('*').order('created_at', { ascending: false }),
       supabase.from('profiles').select('*').eq('is_active', true).order('username'),
+      supabase.from('department_forms').select('*').order('department'),
     ]);
     setApplications(appsRes.data || []);
     setPhases(phasesRes.data || []);
     setForms(formsRes.data || []);
     setResponses(responsesRes.data || []);
     setAllMembers(membersRes.data || []);
+    setDeptForms(deptFormsRes.data || []);
     setLoading(false);
   }
 
@@ -269,6 +278,164 @@ export default function DeptApplicationsPage() {
       <div>
         <h1 className="text-2xl font-bold text-white">Bewerbungen</h1>
         <p className="text-gray-400 text-sm mt-1">{visibleApps.length} Bewerbungen · {allVisibleForms.length} eigene Formulare</p>
+        {/* ══ TAB: STANDARD-FORMULARE ══ */}
+      {activeTab === 'dept_forms' && (
+        <div className="space-y-4">
+          {!showDeptFormEditor ? (
+            <div className="space-y-3">
+              {Object.keys(DEPT_LABELS).filter(d => canSeeDept(d)).map(dept => {
+                const df = deptForms.find(f => f.department === dept);
+                const qCount = df?.questions?.length || 0;
+                return (
+                  <div key={dept} className="bg-[#1a1d27] border border-white/10 rounded-xl p-5 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{DEPT_ICONS[dept]}</span>
+                      <div>
+                        <p className="text-white font-semibold">{DEPT_LABELS[dept]}</p>
+                        <p className="text-gray-500 text-xs mt-0.5">❓ {qCount} Fragen</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setEditingDeptForm(df || { department: dept, title: DEPT_LABELS[dept], intro: '', questions: [] });
+                        setDeptFormQuestions(df?.questions || []);
+                        setDeptFormIntro(df?.intro || '');
+                        setShowDeptFormEditor(true);
+                      }}
+                      className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 text-sm font-medium px-4 py-2 rounded-lg transition">
+                      ✏️ Bearbeiten
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : editingDeptForm && (
+            <div className="space-y-5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">{DEPT_ICONS[editingDeptForm.department]}</span>
+                  <h2 className="text-white font-bold text-lg">{DEPT_LABELS[editingDeptForm.department]}</h2>
+                </div>
+                <button onClick={() => { setShowDeptFormEditor(false); setEditingDeptForm(null); }}
+                  className="text-gray-400 hover:text-white text-sm transition">← Zurück</button>
+              </div>
+
+              {/* Intro */}
+              <div>
+                <label className="text-gray-400 text-xs mb-1 block">Einleitungstext</label>
+                <textarea value={deptFormIntro} onChange={e => setDeptFormIntro(e.target.value)} rows={4}
+                  className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none" />
+              </div>
+
+              {/* Fragen */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-white font-medium text-sm">Fragen ({deptFormQuestions.length})</p>
+                  <button onClick={() => setDeptFormQuestions(p => [...p, { id: crypto.randomUUID(), type: 'text', label: '', required: false, section: '' }])}
+                    className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 text-xs px-3 py-1.5 rounded-lg transition">
+                    + Frage hinzufügen
+                  </button>
+                </div>
+
+                {deptFormQuestions.length === 0 && (
+                  <div className="text-center py-8 bg-[#0f1117] rounded-xl border border-dashed border-white/10">
+                    <p className="text-gray-500 text-sm">Noch keine Fragen.</p>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  {deptFormQuestions.map((q: any, idx: number) => (
+                    <div key={q.id} className="bg-[#0f1117] border border-white/10 rounded-xl p-4 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-gray-500 text-xs font-medium">Frage {idx + 1}</span>
+                        <div className="flex gap-1">
+                          <button onClick={() => {
+                            if (idx === 0) return;
+                            const next = [...deptFormQuestions];
+                            [next[idx], next[idx-1]] = [next[idx-1], next[idx]];
+                            setDeptFormQuestions(next);
+                          }} disabled={idx === 0} className="text-gray-500 hover:text-white disabled:opacity-20 text-sm px-2 py-1 rounded transition">↑</button>
+                          <button onClick={() => {
+                            if (idx === deptFormQuestions.length - 1) return;
+                            const next = [...deptFormQuestions];
+                            [next[idx], next[idx+1]] = [next[idx+1], next[idx]];
+                            setDeptFormQuestions(next);
+                          }} disabled={idx === deptFormQuestions.length - 1} className="text-gray-500 hover:text-white disabled:opacity-20 text-sm px-2 py-1 rounded transition">↓</button>
+                          <button onClick={() => setDeptFormQuestions(p => p.filter((_: any, i: number) => i !== idx))}
+                            className="text-red-400 hover:text-red-300 text-sm px-2 py-1 rounded transition">✕</button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="col-span-2">
+                          <input value={q.label} onChange={e => setDeptFormQuestions(p => p.map((x: any, i: number) => i === idx ? { ...x, label: e.target.value } : x))}
+                            placeholder="Frage / Beschriftung..."
+                            className="w-full bg-[#1a1d27] border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500" />
+                        </div>
+                        <div>
+                          <input value={q.section || ''} onChange={e => setDeptFormQuestions(p => p.map((x: any, i: number) => i === idx ? { ...x, section: e.target.value } : x))}
+                            placeholder="Abschnitt (optional)..."
+                            className="w-full bg-[#1a1d27] border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500 text-xs focus:outline-none focus:border-blue-500" />
+                        </div>
+                        <div>
+                          <select value={q.type} onChange={e => setDeptFormQuestions(p => p.map((x: any, i: number) => i === idx ? { ...x, type: e.target.value, options: undefined } : x))}
+                            className="w-full bg-[#1a1d27] border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500">
+                            {QUESTION_TYPES.map(t => <option key={t.key} value={t.key}>{t.icon} {t.label}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <input value={q.placeholder || ''} onChange={e => setDeptFormQuestions(p => p.map((x: any, i: number) => i === idx ? { ...x, placeholder: e.target.value } : x))}
+                            placeholder="Platzhaltertext..."
+                            className="w-full bg-[#1a1d27] border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500 text-xs focus:outline-none focus:border-blue-500" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" checked={q.required} onChange={e => setDeptFormQuestions(p => p.map((x: any, i: number) => i === idx ? { ...x, required: e.target.checked } : x))} className="accent-blue-500" />
+                            <span className="text-gray-400 text-xs">Pflichtfeld</span>
+                          </label>
+                        </div>
+                      </div>
+                      {['select','radio','checkbox'].includes(q.type) && (
+                        <div>
+                          <label className="text-gray-500 text-xs mb-1 block">Optionen (eine pro Zeile)</label>
+                          <textarea value={(q.options||[]).join('\n')} onChange={e => setDeptFormQuestions(p => p.map((x: any, i: number) => i === idx ? { ...x, options: e.target.value.split('\n').filter(Boolean) } : x))}
+                            placeholder={"Option 1\nOption 2"} rows={3}
+                            className="w-full bg-[#1a1d27] border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-600 text-xs focus:outline-none focus:border-blue-500 resize-none" />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button onClick={() => { setShowDeptFormEditor(false); setEditingDeptForm(null); }}
+                  className="bg-white/5 hover:bg-white/10 text-gray-300 px-4 py-2.5 rounded-lg text-sm transition">Abbrechen</button>
+                <button onClick={async () => {
+                  if (!editingDeptForm) return;
+                  setSavingDeptForm(true);
+                  const { data: { user } } = await supabase.auth.getUser();
+                  await supabase.from('department_forms').upsert({
+                    department: editingDeptForm.department,
+                    title: DEPT_LABELS[editingDeptForm.department] || editingDeptForm.department,
+                    intro: deptFormIntro,
+                    questions: deptFormQuestions,
+                    updated_by: user?.id || myId,
+                    updated_at: new Date().toISOString(),
+                  }, { onConflict: 'department' });
+                  setSavingDeptForm(false);
+                  showMsg('✅ Formular gespeichert.');
+                  setShowDeptFormEditor(false);
+                  setEditingDeptForm(null);
+                  await load();
+                }} disabled={savingDeptForm}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-medium py-2.5 rounded-lg text-sm transition">
+                  {savingDeptForm ? 'Speichern...' : '💾 Formular speichern'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       </div>
 
       {msg && (
@@ -282,6 +449,7 @@ export default function DeptApplicationsPage() {
           {key:'links',label:'Links & Phasen',icon:'🔗',count:0},
           {key:'forms',label:'Eigene Formulare',icon:'📝',count:allVisibleForms.length},
           {key:'responses',label:'Formular-Antworten',icon:'📨',count:responseCount},
+          {key:'dept_forms',label:'Standard-Formulare',icon:'⚙️',count:0},
         ] as {key:TabType;label:string;icon:string;count:number}[]).map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
             className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === t.key ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>
