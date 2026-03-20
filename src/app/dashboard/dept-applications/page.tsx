@@ -632,7 +632,7 @@ export default function DeptApplicationsPage() {
       })()}
 
       {/* ══ MODAL: ZUGRIFFSRECHTE (nur Top Management) ══ */}
-      {accessModalForm && (myRole === 'top_management' || canSeeDept(accessModalForm.department)) && (
+      {accessModalForm && myRole === 'top_management' && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-[#1a1d27] border border-white/10 rounded-2xl w-full max-w-md">
             <div className="p-6 border-b border-white/10 flex items-center justify-between">
@@ -693,7 +693,7 @@ export default function DeptApplicationsPage() {
               </div>
 
               {/* Zugriffsrechte im Form Builder */}
-              {(myRole === 'top_management' || myAccess.length > 0) && (
+              {myRole === 'top_management' && (
                 <div>
                   <label className="text-gray-400 text-xs mb-2 block">🔑 Zugriffsrechte – Wer kann dieses Formular sehen?</label>
                   <div className="grid grid-cols-2 gap-1.5">
