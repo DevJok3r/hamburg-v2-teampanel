@@ -119,6 +119,7 @@ export default function TodosPage() {
     setNewTodo({ title: '', description: '', priority: 'medium', due_date: '', assigned_to: '', tags: [], color: 'blue' });
     setTagInput('');
     setShowForm(false);
+    await log('todos', 'todo_created', { title: newTodo.title, priority: newTodo.priority, assigned_to: newTodo.assigned_to || null });
     loadTodos();
   }
 
@@ -532,3 +533,4 @@ export default function TodosPage() {
     </div>
   );
 }
+

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createClientSupabaseClient } from '@/lib/supabase/client';
 import { UserRole } from '@/types';
+import { log } from '@/lib/logger';
 
 interface Order {
   id: string;
@@ -214,6 +215,7 @@ export default function OrdersManagementPage() {
     setShowCreate(false);
     setCf({ ...EMPTY_CF });
     notify('Auftrag erstellt.');
+    await log('orders', 'order_created', { product: cf.product, customer: cf.name });
     await loadOrders();
   }
 
@@ -753,3 +755,4 @@ export default function OrdersManagementPage() {
     </div>
   );
 }
+

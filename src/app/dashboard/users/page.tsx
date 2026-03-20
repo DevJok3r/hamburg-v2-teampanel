@@ -6,6 +6,7 @@ import { Profile, UserRole } from '@/types';
 import { can, ROLE_LABELS, ROLE_HIERARCHY } from '@/lib/permissions';
 import RoleBadge from '@/components/RoleBadge';
 import Link from 'next/link';
+import { log } from '@/lib/logger';
 
 type ModalType = 'password' | 'username' | 'role' | 'deactivate' | 'activate' | 'departments' | null;
 
@@ -81,12 +82,14 @@ export default function UsersPage() {
           body: JSON.stringify({ userId: selectedUser.id, newPassword: inputValue }),
         });
         if (!res.ok) { setError('Fehler beim Ändern.'); setActionLoading(false); return; }
+        await log('users', 'password_changed', { target: selectedUser.username, changed_by: myUsername }, selectedUser.id);
         setSuccess('Passwort erfolgreich geändert!');
       }
       else if (modalType === 'username') {
         if (inputValue.trim().length < 3) { setError('Mindestens 3 Zeichen.'); setActionLoading(false); return; }
         const { error: err } = await supabase.from('profiles').update({ username: inputValue.trim() }).eq('id', selectedUser.id);
         if (err) { setError('Fehler: ' + err.message); setActionLoading(false); return; }
+        await log('users', 'username_changed', { old_username: selectedUser.username, new_username: inputValue.trim(), changed_by: myUsername }, selectedUser.id);
         setSuccess('Benutzername erfolgreich geändert!');
       }
       else if (modalType === 'role') {
@@ -96,21 +99,25 @@ export default function UsersPage() {
         }
         const { error: err } = await supabase.from('profiles').update({ role: selectedRole }).eq('id', selectedUser.id);
         if (err) { setError('Fehler: ' + err.message); setActionLoading(false); return; }
+        await log('roles', 'role_changed', { target: selectedUser.username, old_role: selectedUser.role, new_role: selectedRole, changed_by: myUsername }, selectedUser.id);
         setSuccess('Rolle erfolgreich geändert!');
       }
       else if (modalType === 'departments') {
         const { error: err } = await supabase.from('profiles').update({ departments: selectedDepts }).eq('id', selectedUser.id);
         if (err) { setError('Fehler: ' + err.message); setActionLoading(false); return; }
+        await log('users', 'departments_changed', { target: selectedUser.username, departments: selectedDepts, changed_by: myUsername }, selectedUser.id);
         setSuccess('Abteilungen erfolgreich gespeichert!');
       }
       else if (modalType === 'deactivate') {
         const { error: err } = await supabase.from('profiles').update({ is_active: false }).eq('id', selectedUser.id);
         if (err) { setError('Fehler: ' + err.message); setActionLoading(false); return; }
+        await log('users', 'user_deactivated', { target: selectedUser.username, deactivated_by: myUsername }, selectedUser.id);
         setSuccess('Benutzer deaktiviert!');
       }
       else if (modalType === 'activate') {
         const { error: err } = await supabase.from('profiles').update({ is_active: true }).eq('id', selectedUser.id);
         if (err) { setError('Fehler: ' + err.message); setActionLoading(false); return; }
+        await log('users', 'user_activated', { target: selectedUser.username, activated_by: myUsername }, selectedUser.id);
         setSuccess('Benutzer aktiviert!');
       }
 
@@ -192,7 +199,7 @@ export default function UsersPage() {
             {(modalType === 'deactivate' || modalType === 'activate') && (
               <p className="text-gray-400 text-sm bg-[#0f1117] rounded-lg p-4">
                 {modalType === 'deactivate'
-                  ? `Bist du sicher, dass du ${selectedUser.username} deaktivieren möchtest? Der Benutzer kann sich danach nicht mehr einloggen.`
+                  ? `Bist du sicher, dass du ${selectedUser.username} deaktivieren möchtest?`
                   : `Bist du sicher, dass du ${selectedUser.username} wieder aktivieren möchtest?`}
               </p>
             )}
@@ -290,7 +297,7 @@ export default function UsersPage() {
                   <td className="px-6 py-4">
                     <div className="flex gap-1 flex-wrap">
                       {(user.departments || []).length === 0 ? (
-                        <span className="text-gray-600 text-xs">–</span>
+                        <span className="text-gray-600 text-xs">—</span>
                       ) : (user.departments || []).map((d: string) => (
                         <span key={d} className="text-xs px-2 py-0.5 rounded border bg-cyan-500/10 text-cyan-400 border-cyan-500/30">
                           {DEPARTMENTS.find(x => x.key === d)?.label || d}
@@ -329,16 +336,17 @@ export default function UsersPage() {
                             Passwort
                           </button>
                           {isTopManagement && user.id !== myId && (
-                        <button
-                          onClick={async () => {
-                            await supabase.from('profiles').update({ show_staff_orders: !(user as any).show_staff_orders }).eq('id', user.id);
-                            load();
-                          }}
-                          title="Staff-Orders Tab"
-                          className={`relative w-10 h-5 rounded-full transition-all flex-shrink-0 ${(user as any).show_staff_orders ? 'bg-blue-600' : 'bg-white/10'}`}>
-                          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${(user as any).show_staff_orders ? 'left-5' : 'left-0.5'}`} />
-                        </button>
-                      )}
+                            <button
+                              onClick={async () => {
+                                await supabase.from('profiles').update({ show_staff_orders: !(user as any).show_staff_orders }).eq('id', user.id);
+                                await log('users', 'staff_orders_toggled', { target: user.username, enabled: !(user as any).show_staff_orders }, user.id);
+                                load();
+                              }}
+                              title="Staff-Orders Tab"
+                              className={`relative w-10 h-5 rounded-full transition-all flex-shrink-0 ${(user as any).show_staff_orders ? 'bg-blue-600' : 'bg-white/10'}`}>
+                              <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${(user as any).show_staff_orders ? 'left-5' : 'left-0.5'}`} />
+                            </button>
+                          )}
                           {user.is_active ? (
                             <button onClick={() => openModal(user, 'deactivate')}
                               className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-medium px-3 py-1.5 rounded-lg transition">
