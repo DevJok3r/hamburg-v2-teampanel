@@ -1,4 +1,5 @@
 'use client';
+import { log } from '@/lib/logger';
 
 import { useState, useEffect, useMemo } from 'react';
 import { createClientSupabaseClient } from '@/lib/supabase/client';
@@ -533,4 +534,5 @@ export default function TodosPage() {
     </div>
   );
 }
+
 
