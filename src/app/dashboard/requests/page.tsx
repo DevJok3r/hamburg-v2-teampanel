@@ -50,7 +50,7 @@ const DEPT_LABELS: Record<string, string> = {
   social_media_team: 'Social Media Team', event_team: 'Event Team',
 };
 
-type TabType = 'mine' | 'incoming' | 'forwarded';
+type TabType = 'mine' | 'incoming' | 'forwarded' | 'history';
 
 // Target type for request
 type TargetType = 'person' | 'department_role';
@@ -142,15 +142,15 @@ export default function RequestsPage() {
     return false;
   }
 
-  const myRequests       = requests.filter(r => r.requested_by === myId);
-  const incomingRequests = requests.filter(r => isIncomingForMe(r) && r.status === 'pending');
+  const myRequests        = requests.filter(r => r.requested_by === myId);
+  const incomingRequests  = requests.filter(r => isIncomingForMe(r) && r.status === 'pending');
   const forwardedRequests = requests.filter(r => r.status === 'forwarded' && isTopMgmt);
+  const historyRequests   = requests.filter(r => ['approved', 'rejected'].includes(r.status) && isTopMgmt);
 
-  const displayRequests = tab === 'mine'
-    ? myRequests
-    : tab === 'incoming'
-    ? incomingRequests
-    : forwardedRequests;
+  const displayRequests = tab === 'mine'     ? myRequests
+    : tab === 'incoming'  ? incomingRequests
+    : tab === 'forwarded' ? forwardedRequests
+    : historyRequests;
 
   async function submitRequest() {
     if (!fTitle.trim()) return;
@@ -301,6 +301,7 @@ export default function RequestsPage() {
           { key: 'mine',      label: 'Meine Anträge',   count: myRequests.length,        show: true },
           { key: 'incoming',  label: 'Eingehend',        count: incomingRequests.length,  show: true },
           { key: 'forwarded', label: '📨 Top Management', count: forwardedRequests.length, show: isTopMgmt },
+          { key: 'history',   label: '📁 Verlauf',         count: historyRequests.length,  show: isTopMgmt },
         ] as { key: TabType; label: string; count: number; show: boolean }[])
           .filter(t => t.show)
           .map(t => (
