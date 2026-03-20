@@ -76,7 +76,7 @@ export default function RequestsPage() {
   const [fExam, setFExam]           = useState('');
   const [fDate, setFDate]           = useState('');
   const [fTargetType, setFTargetType] = useState<TargetType>('person');
-  const [fTargetPerson, setFTargetPerson] = useState('');
+  const [fTargetPersons, setFTargetPersons] = useState<string[]>([]);
   const [fTargetDept, setFTargetDept]   = useState('');
   const [fTargetRole, setFTargetRole]   = useState('');
   const [saving, setSaving]         = useState(false);
@@ -133,7 +133,8 @@ export default function RequestsPage() {
     if (!r) return false;
     if (r.requested_by === myId) return false; // own requests not incoming
     const meta = r.metadata || {};
-    if (meta.target_person_id && meta.target_person_id === myId) return true;
+    if (meta.target_person_ids && meta.target_person_ids.includes(myId)) return true;
+    if (meta.target_person_id && meta.target_person_id === myId) return true; // backwards compat
     if (meta.target_dept && meta.target_role) {
       return myDepts.includes(meta.target_dept) && myRole === meta.target_role;
     }
@@ -156,14 +157,14 @@ export default function RequestsPage() {
     if (!fTitle.trim()) return;
     if (selectedCategory?.requiresExam && !fExam) return;
     if (selectedCategory?.requiresDate && !fDate) return;
-    if (fTargetType === 'person' && !fTargetPerson) return;
+    if (fTargetType === 'person' && fTargetPersons.length === 0) return;
     if (fTargetType === 'department_role' && (!fTargetDept || !fTargetRole)) return;
     setSaving(true);
 
     const metadata: any = {};
     if (fExam) metadata.exam_id = fExam;
     if (fTargetType === 'person') {
-      metadata.target_person_id = fTargetPerson;
+      metadata.target_person_ids = fTargetPersons;
     } else {
       metadata.target_dept = fTargetDept;
       metadata.target_role = fTargetRole;
@@ -185,7 +186,7 @@ export default function RequestsPage() {
       setShowCreate(false);
       setFTitle(''); setFDesc(''); setFExam(''); setFPriority('normal');
       setFCategory('pruefung'); setFDate('');
-      setFTargetPerson(''); setFTargetDept(''); setFTargetRole('');
+      setFTargetPersons([]); setFTargetDept(''); setFTargetRole('');
       await loadRequests();
     }
     setSaving(false);
@@ -260,6 +261,10 @@ export default function RequestsPage() {
   // Get target display for a request
   function getTargetDisplay(r: any): string {
     const meta = r.metadata || {};
+    if (meta.target_person_ids && meta.target_person_ids.length > 0) {
+      const names = meta.target_person_ids.map((id: string) => members.find(m => m.id === id)?.username || '?').join(', ');
+      return `👤 ${names}`;
+    }
     if (meta.target_person_id) {
       const person = members.find(m => m.id === meta.target_person_id);
       return person ? `👤 ${person.username}` : '👤 Unbekannt';
@@ -409,24 +414,30 @@ export default function RequestsPage() {
 
                 {fTargetType === 'person' && (
                   <div>
-                    <label className="text-gray-500 text-xs mb-1 block">Person auswählen</label>
-                    <div className="relative">
-                      <button
-                        onClick={() => {}}
-                        className="w-full text-left bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
-                      >
-                        {fTargetPerson ? (members.find(m => m.id === fTargetPerson)?.username || 'Wählen...') : <span className="text-gray-500">Person wählen...</span>}
-                      </button>
-                    </div>
-                    <div className="mt-2 bg-[#0f1117] border border-white/10 rounded-lg max-h-40 overflow-y-auto">
+                    <label className="text-gray-500 text-xs mb-1 block">Personen auswählen (mehrere möglich)</label>
+                    {fTargetPersons.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mb-2">
+                        {fTargetPersons.map(id => {
+                          const m = members.find(m => m.id === id);
+                          return m ? (
+                            <span key={id} className="flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                              {m.username}
+                              <button onClick={() => setFTargetPersons(p => p.filter(x => x !== id))} className="hover:text-white ml-0.5">✕</button>
+                            </span>
+                          ) : null;
+                        })}
+                      </div>
+                    )}
+                    <div className="bg-[#0f1117] border border-white/10 rounded-lg max-h-40 overflow-y-auto">
                       {members.filter(m => m.id !== myId).map(m => (
-                        <button key={m.id} onClick={() => setFTargetPerson(m.id)}
-                          className={`w-full text-left px-3 py-2 text-sm hover:bg-white/5 transition flex items-center gap-2 ${fTargetPerson === m.id ? 'bg-blue-500/10 text-blue-400' : 'text-white'}`}>
+                        <button key={m.id} onClick={() => setFTargetPersons(p => p.includes(m.id) ? p.filter(x => x !== m.id) : [...p, m.id])}
+                          className={`w-full text-left px-3 py-2 text-sm hover:bg-white/5 transition flex items-center gap-2 ${fTargetPersons.includes(m.id) ? 'bg-blue-500/10 text-blue-400' : 'text-white'}`}>
                           <div className="w-6 h-6 bg-gradient-to-br from-blue-500/30 to-violet-500/30 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
                             {m.username.charAt(0).toUpperCase()}
                           </div>
                           <span>{m.username}</span>
                           <span className="text-gray-500 text-xs ml-auto">{m.role?.replace(/_/g, ' ')}</span>
+                          {fTargetPersons.includes(m.id) && <span className="text-blue-400 text-xs">✓</span>}
                         </button>
                       ))}
                     </div>
@@ -529,7 +540,7 @@ export default function RequestsPage() {
                   disabled={saving || !fTitle.trim()
                     || (selectedCategory?.requiresExam ? !fExam : false)
                     || (selectedCategory?.requiresDate ? !fDate : false)
-                    || (fTargetType === 'person' ? !fTargetPerson : (!fTargetDept || !fTargetRole))
+                    || (fTargetType === 'person' ? fTargetPersons.length === 0 : (!fTargetDept || !fTargetRole))
                   }
                   className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-medium py-2.5 rounded-lg text-sm transition">
                   {saving ? 'Wird gestellt...' : '📤 Antrag stellen'}
