@@ -14,7 +14,7 @@ interface TicketCategory {
   support_roles: string; color: string; message: string;
 }
 
-type Section = 'overview' | 'moderation' | 'welcome' | 'leave' | 'tickets' | 'logging' | 'logs';
+type Section = 'overview' | 'moderation' | 'welcome' | 'leave' | 'tickets' | 'logging' | 'logs' | 'messages';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const LOGO = 'https://cdn.discordapp.com/attachments/1289620593062187110/1484654302726328440/Hamburg_V2.png';
@@ -173,6 +173,7 @@ export default function BotDashboard() {
   const [tickets, setTickets]     = useState<Record<string,any>>({});
   const [logging, setLogging]     = useState<Record<string,any>>({});
   const [modCfg, setModCfg]       = useState<Record<string,any>>({});
+  const [dmMsgs, setDmMsgs]       = useState<Record<string,any>>({});
 
   useEffect(() => {
     setWelcome(getCfg('welcome'));
@@ -180,6 +181,7 @@ export default function BotDashboard() {
     setTickets(getCfg('tickets'));
     setLogging(getCfg('logging'));
     setModCfg(getCfg('moderation'));
+    setDmMsgs(getCfg('dm_messages'));
     setTicketCats(getCfg('tickets')?.categories || []);
   }, [configs]);
 
@@ -193,6 +195,7 @@ export default function BotDashboard() {
     { key: 'leave',      label: 'Abschied',    icon: '📤' },
     { key: 'tickets',    label: 'Tickets',     icon: '🎫' },
     { key: 'logging',    label: 'Logging',     icon: '📋' },
+    { key: 'messages',   label: 'DM Nachrichten', icon: '✉️' },
     { key: 'logs',       label: 'Bot Logs',    icon: '📊', badge: logs.length },
   ];
 
@@ -581,6 +584,41 @@ export default function BotDashboard() {
         )}
 
         {/* ── LOGS ── */}
+        {/* ── DM NACHRICHTEN ── */}
+        {section === 'messages' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold text-white">✉️ DM Nachrichten</h2>
+              <p className="text-gray-500 text-sm mt-0.5">Nachrichten die Benutzer per DM erhalten · Variablen: {'{reason}'} {'{duration}'} {'{server}'} {'{moderator}'}</p>
+            </div>
+            <Card>
+              <div className="space-y-6">
+                {[
+                  { key: 'ban',       label: '🔨 Ban DM',          placeholder: 'Du wurdest von **{server}** gebannt.\n\n**Grund:** {reason}' },
+                  { key: 'kick',      label: '👢 Kick DM',         placeholder: 'Du wurdest von **{server}** gekickt.\n\n**Grund:** {reason}' },
+                  { key: 'timeout',   label: '⏱️ Timeout DM',     placeholder: 'Du hast einen Timeout auf **{server}** erhalten.\n\n**Dauer:** {duration} Minuten\n**Grund:** {reason}' },
+                  { key: 'untimeout', label: '✅ Timeout Ende DM', placeholder: 'Dein Timeout auf **{server}** wurde aufgehoben.' },
+                  { key: 'warn',      label: '⚠️ Warn DM',        placeholder: 'Du hast eine Verwarnung auf **{server}** erhalten.\n\n**Grund:** {reason}' },
+                ].map(f => (
+                  <div key={f.key}>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-gray-300 text-sm font-medium">{f.label}</label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <Toggle value={dmMsgs[f.key + '_enabled'] !== false} onChange={v => setDmMsgs(p => ({...p, [f.key + '_enabled']: v}))} />
+                        <span className="text-gray-500 text-xs">Aktiviert</span>
+                      </label>
+                    </div>
+                    <RichEditor value={dmMsgs[f.key] || ''} onChange={v => setDmMsgs(p => ({...p, [f.key]: v}))} placeholder={f.placeholder} rows={4} />
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => saveModule('dm_messages', dmMsgs)} disabled={saving === 'dm_messages'}
+                className="mt-6 w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-semibold py-3 rounded-xl text-sm transition">
+                {saving === 'dm_messages' ? '⏳ Speichern...' : '💾 DM Nachrichten speichern'}
+              </button>
+            </Card>
+          </div>
+        )}
         {section === 'logs' && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
