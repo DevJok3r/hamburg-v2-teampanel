@@ -81,6 +81,12 @@ export default function AbsencesPage() {
 
   async function submitAbsence() {
     if (!form.from_date || !form.to_date || !form.reason.trim()) return;
+    if (!form.from_date || !form.to_date) {
+  alert('Bitte Von- und Bis-Datum angeben.'); return;
+}
+if (new Date(form.from_date) > new Date(form.to_date)) {
+  alert('Das Von-Datum darf nicht nach dem Bis-Datum liegen.'); return;
+}
     await supabase.from('absences').insert({
       user_id: myId, from_date: form.from_date, to_date: form.to_date, reason: form.reason,
     });
@@ -428,7 +434,7 @@ export default function AbsencesPage() {
                 </div>
 
                 {/* Review Buttons */}
-                {canReview && a.status === 'pending' && a.user_id !== myId && effStatus !== 'expired' && (
+                {canReview && a.user_id !== myId && effStatus !== 'expired' && (
                   <div className="grid grid-cols-2 gap-2 border-t border-white/10 pt-4">
                     <button onClick={() => reviewAbsence(a.id, 'rejected')}
                       className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 font-medium py-2.5 rounded-lg text-sm transition">
