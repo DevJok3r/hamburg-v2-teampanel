@@ -15,7 +15,7 @@ interface Order {
   product_description: string | null;
   price: number | null;
   currency: string;
-  status: 'pending_approval' | 'approved' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'pending_approval' | 'approved' | 'in_progress' | 'completed' | 'cancelled' | 'cancellation_requested';
   progress: number;
   status_tag: string;
   notes: string | null;
@@ -52,6 +52,7 @@ const STATUS_CONFIG = {
   in_progress:      { label: 'In Bearbeitung',        short: 'Aktiv',       bg: 'bg-violet-500/10', border: 'border-violet-500/30', text: 'text-violet-400', dot: 'bg-violet-400' },
   completed:        { label: 'Abgeschlossen',          short: 'Fertig',      bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', text: 'text-emerald-400', dot: 'bg-emerald-400' },
   cancelled:        { label: 'Storniert',              short: 'Storniert',   bg: 'bg-red-500/10', border: 'border-red-500/30', text: 'text-red-400', dot: 'bg-red-400' },
+  cancellation_requested: { label: 'Stornierung angefragt', short: 'Stornierung', bg: 'bg-orange-500/10', border: 'border-orange-500/30', text: 'text-orange-400', dot: 'bg-orange-400' },
 };
 
 const PRESET_TAGS = [
@@ -736,9 +737,27 @@ export default function OrdersManagementPage() {
                         className="px-4 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm transition disabled:opacity-30">+</button>
                     </div>
 
+                    {/* Stornierung anfragen – alle sichtbar */}
+                    {selected.status !== 'cancellation_requested' && (
+                      <button onClick={async () => {
+                        await supabase.from('orders').update({ status: 'cancellation_requested', status_tag: 'Stornierung angefragt' }).eq('id', selected.id);
+                        setSelected(null); 
+                        await loadOrders();
+                      }}
+                        className="w-full py-2.5 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 text-sm transition">
+                        🚫 Stornierung anfragen
+                      </button>
+                    )}
+                    {selected.status === 'cancellation_requested' && !isTopManagement && (
+                      <div className="text-center text-orange-400 text-xs py-2">⏳ Stornierung wird geprüft...</div>
+                    )}
                     {/* Stornieren/Löschen nur Top Management */}
                     {isTopManagement && (
                       <div className="flex gap-2">
+                        {selected.status === 'cancellation_requested' && (
+                          <button onClick={() => cancelOrder(selected)}
+                            className="flex-1 py-2.5 rounded-xl bg-orange-950/30 hover:bg-orange-950/50 text-orange-400 border border-orange-500/20 text-sm transition">✅ Stornierung bestätigen</button>
+                        )}
                         <button onClick={() => cancelOrder(selected)}
                           className="flex-1 py-2.5 rounded-xl bg-red-950/30 hover:bg-red-950/50 text-red-400 border border-red-500/20 text-sm transition">Stornieren</button>
                         <button onClick={() => deleteOrder(selected)}
