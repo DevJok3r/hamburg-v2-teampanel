@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 
 const LOGO = 'https://cdn.discordapp.com/attachments/1289620593062187110/1484654302726328440/Hamburg_V2.png';
 
-type Section = 'overview' | 'bot_settings' | 'moderation' | 'messages' | 'welcome' | 'leave' | 'tickets' | 'ticket_messages' | 'logging' | 'log_templates' | 'transcripts' | 'logs';
+type Section = 'overview' | 'bot_settings' | 'presence' | 'moderation' | 'messages' | 'welcome' | 'leave' | 'tickets' | 'ticket_messages' | 'logging' | 'log_templates' | 'transcripts' | 'logs';
 
 interface BotLog { id: string; action: string; moderator_id: string | null; target_id: string | null; reason: string | null; details: Record<string, any>; created_at: string; }
 interface Transcript { id: string; channel_name: string; user_id: string; claimed_by: string | null; category: string; messages: any[]; closed_by: string | null; created_at: string; closed_at: string | null; }
@@ -110,6 +110,7 @@ export default function BotDashboard() {
   const [selectedTranscript, setSelectedTranscript] = useState<Transcript | null>(null);
   const [logTemplates, setLogTemplates] = useState<Record<string, LogTemplate>>({});
   const [botInfo, setBotInfo]   = useState<BotInfo | null>(null);
+  const [presence, setPresence] = useState<Record<string,any>>({});
   const [saving, setSaving]     = useState<string | null>(null);
   const [msg, setMsg]           = useState<{ text: string; ok: boolean } | null>(null);
   const [logFilter, setLogFilter] = useState('all');
@@ -182,7 +183,19 @@ export default function BotDashboard() {
     } catch { showBotMsg('❌ Verbindungsfehler', false); }
   }
 
-  useEffect(() => { load(); fetchBotInfo(); }, []);
+  useEffect(() => { 
+    load(); 
+    fetchBotInfo();
+    const fetchPresence = async () => {
+      try {
+        const { data: presData } = await supabase.from('bot_presence').select('*').eq('guild_id', guildId).single();
+        if (presData) setPresence(presData);
+      } catch {
+        // Handle error silently
+      }
+    };
+    if (guildId) fetchPresence();
+  }, [guildId]);
 
   function isEnabled(m: string) { return configs[m]?.enabled ?? false; }
 
@@ -204,6 +217,13 @@ export default function BotDashboard() {
   }
 
   async function saveGuildId() { localStorage.setItem('bot_guild_id', guildId); await load(guildId); showMsg('✅ Verbunden!'); }
+  async function savePresence() {
+  if (!guildId) return showMsg('Guild ID eingeben!', false);
+  setSaving('presence');
+  await supabase.from('bot_presence').upsert({ guild_id: guildId, status: presence.status || 'online', activity_type: presence.activity_type || 'PLAYING', activity_text: presence.activity_text || 'Hamburg V2', activity_url: presence.activity_url || null, updated_at: new Date().toISOString() }, { onConflict: 'guild_id' });
+  setSaving(null);
+  showMsg('✅ Gespeichert! Bot aktualisiert in max. 5 Minuten.');
+}
 
   async function saveLogTemplate(action: string, template: Partial<LogTemplate>) {
     if (!guildId) return;
@@ -283,6 +303,7 @@ export default function BotDashboard() {
   const filteredLogActions = logCatFilter === 'all' ? ALL_LOG_ACTIONS : ALL_LOG_ACTIONS.filter(a => a.category === logCatFilter);
 
   const NAV: { key: Section; label: string; icon: string; count?: number; divider?: boolean }[] = [
+    { key: 'presence',        label: 'Aktivität & Status', icon: '🟢' },
     { key: 'overview',        label: 'Übersicht',          icon: '🏠' },
     { key: 'bot_settings',    label: 'Bot Einstellungen',  icon: '🤖', divider: true },
     { key: 'moderation',      label: 'Moderation',         icon: '🛡️' },
@@ -343,7 +364,57 @@ export default function BotDashboard() {
       {/* Content */}
       <div className="flex-1 min-w-0 space-y-6">
         {msg && <div className={`fixed top-6 right-6 z-50 px-5 py-3 rounded-xl text-sm font-medium border shadow-2xl backdrop-blur-sm ${msg.ok ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}`}>{msg.text}</div>}
-
+        
+        {section === 'presence' && (
+  <div className="space-y-6">
+    <SectionHeader title="🟢 Aktivität & Status" desc="Bot-Status und Aktivität konfigurieren" />
+    <Card>
+      <p className="text-white font-semibold mb-5">🌐 Online-Status</p>
+      <div className="grid grid-cols-4 gap-3">
+        {[{key:'online',label:'🟢 Online',color:'border-green-500/30 bg-green-500/10 text-green-400'},{key:'idle',label:'🟡 Abwesend',color:'border-yellow-500/30 bg-yellow-500/10 text-yellow-400'},{key:'dnd',label:'🔴 DND',color:'border-red-500/30 bg-red-500/10 text-red-400'},{key:'invisible',label:'⚫ Unsichtbar',color:'border-gray-500/30 bg-gray-500/10 text-gray-400'}].map(s => (
+          <button key={s.key} onClick={() => setPresence(p => ({...p, status: s.key}))}
+            className={`py-3 rounded-xl border text-sm font-medium transition ${presence.status === s.key ? s.color : 'border-white/10 bg-white/5 text-gray-500 hover:bg-white/10'}`}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+    </Card>
+    <Card>
+      <p className="text-white font-semibold mb-5">🎮 Aktivität</p>
+      <div className="space-y-4">
+        <div>
+          <label className="text-gray-400 text-xs font-medium mb-2 block">Aktivitätstyp</label>
+          <div className="grid grid-cols-3 gap-2">
+            {[{key:'PLAYING',label:'🎮 Spielt'},{key:'WATCHING',label:'👁️ Schaut'},{key:'LISTENING',label:'🎵 Hört'},{key:'COMPETING',label:'🏆 Nimmt teil'},{key:'STREAMING',label:'📺 Streamt'},{key:'CUSTOM',label:'✏️ Custom'}].map(t => (
+              <button key={t.key} onClick={() => setPresence(p => ({...p, activity_type: t.key}))}
+                className={`py-2.5 rounded-xl border text-xs font-medium transition ${presence.activity_type === t.key ? 'bg-blue-500/20 border-blue-500/30 text-blue-400' : 'border-white/10 bg-white/5 text-gray-500 hover:bg-white/10'}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <Input label="Aktivitätstext" value={presence.activity_text || ''} onChange={v => setPresence(p => ({...p, activity_text: v}))} placeholder="Hamburg V2 · Roleplay Server" />
+        {presence.activity_type === 'STREAMING' && (
+          <Input label="Stream URL" value={presence.activity_url || ''} onChange={v => setPresence(p => ({...p, activity_url: v}))} placeholder="https://twitch.tv/..." mono />
+        )}
+        <div className="bg-[#0d0e14] rounded-xl p-4 border border-white/[0.05]">
+          <p className="text-gray-600 text-xs mb-2">Vorschau</p>
+          <div className="flex items-center gap-3">
+            <div className={`w-3 h-3 rounded-full flex-shrink-0 ${presence.status==='online'?'bg-green-400':presence.status==='idle'?'bg-yellow-400':presence.status==='dnd'?'bg-red-400':'bg-gray-500'}`} />
+            <div>
+              <p className="text-white text-sm font-medium">{botInfo?.username||'Hamburg V2 Bot'}</p>
+              <p className="text-gray-400 text-xs">{presence.activity_type==='PLAYING'?'🎮 Spielt':presence.activity_type==='WATCHING'?'👁️ Schaut':presence.activity_type==='LISTENING'?'🎵 Hört':presence.activity_type==='STREAMING'?'📺 Streamt':'✏️'} {presence.activity_text||'Hamburg V2'}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <button onClick={savePresence} disabled={saving === 'presence'} className="mt-6 w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-semibold py-3 rounded-xl text-sm transition">
+        {saving === 'presence' ? '⏳...' : '💾 Status speichern'}
+      </button>
+      <p className="text-gray-700 text-xs text-center mt-2">Bot aktualisiert automatisch alle 5 Minuten</p>
+    </Card>
+  </div>
+)}
         {/* ── OVERVIEW ── */}
         {section === 'overview' && (
           <div className="space-y-6">
