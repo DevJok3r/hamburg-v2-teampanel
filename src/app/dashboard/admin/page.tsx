@@ -300,7 +300,9 @@ export default function AdminPage() {
           { key: 'warnings',    label: 'Verwarnungen', count: warnings.length },
           { key: 'entries',     label: 'Einträge',     count: entries.length },
           { key: 'logs',        label: 'System Logs',  count: 0 },
-          ...(myRole === 'top_management' ? [{ key: 'automations', label: 'Automatisierungen', count: 0 }] : []),
+          ...(myRole && myRole === 'projektleitung'
+  ? [{ key: 'automations' as const, label: 'Automatisierungen', count: 0 }]
+  : []),
         ] as { key: MainTab; label: string; count: number }[]).map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
             className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab === t.key ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>
@@ -497,7 +499,7 @@ export default function AdminPage() {
       )}
 
       {/* ══ AUTOMATISIERUNGEN ══ */}
-      {activeTab === 'automations' && myRole === 'top_management' && (
+      {activeTab === 'automations' && myRole && myRole === 'projektleitung' && (
         <div className="space-y-4">
           <div className="flex gap-2">
             {(['automations', 'webhooks'] as const).map(t => (

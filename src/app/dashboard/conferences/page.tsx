@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { createClientSupabaseClient } from '@/lib/supabase/client';
 import { UserRole } from '@/types';
 import RoleBadge from '@/components/RoleBadge';
+type AttendanceStatus = 'present' | 'excused' | 'absent';
 
 const STATUS_STYLES = {
   scheduled: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
@@ -317,7 +318,12 @@ export default function ConferencesPage() {
     await supabase.from('conferences').update({ status: 'active', started_at: new Date().toISOString() }).eq('id', conference.id);
     const attendanceRows = members
       .filter(m => memberMatchesTargets(m, conference.target_roles) || (conference.extra_user_ids || []).includes(m.id))
-      .map(m => ({ conference_id: conference.id, user_id: m.id, status: 'absent' as AttendanceStatus, note: null }));
+      .map(m => ({
+  conference_id: conference.id,
+  user_id: m.id,
+  status: 'absent' as const,
+  note: null,
+}));
     await supabase.from('conference_attendance').upsert(attendanceRows, { onConflict: 'conference_id,user_id' });
     await fireAutomation('conference_started', { titel: conference.title, datum: new Date().toLocaleString('de-DE'), ersteller: myUsername });
     const { data: attendance } = await supabase
@@ -337,7 +343,11 @@ export default function ConferencesPage() {
     setActiveAttendance({ conference, attendance: attendance || [] });
   }
 
-  async function updateAttendance(conferenceId: string, userId: string, status: AttendanceStatus) {
+  async function updateAttendance(
+  conferenceId: string,
+  userId: string,
+  status: 'present' | 'absent' | 'excused'
+) {
     await supabase.from('conference_attendance').update({ status }).eq('conference_id', conferenceId).eq('user_id', userId);
     setActiveAttendance(prev => prev
       ? { ...prev, attendance: prev.attendance.map(a => a.user_id === userId ? { ...a, status } : a) }
