@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { createBrowserClient } from '@supabase/ssr';
 
+
 interface Question {
   id: string;
   type: 'text' | 'textarea' | 'select' | 'radio' | 'checkbox' | 'scale' | 'yesno';
@@ -26,8 +27,6 @@ const DEPT_LABELS: Record<string, string> = {
   event: 'Event Team', development: 'Development Team',
 };
 
-'use client';
-
 export default function CustomFormPage() {
   const params = useParams();
   const id = params?.id as string;
@@ -44,14 +43,25 @@ export default function CustomFormPage() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-  useEffect(() => {
-    async function load() {
-      const { data } = await supabase.from('custom_forms').select('*').eq('id', id).single();
-      setForm(data);
+useEffect(() => {
+  async function load() {
+    const { data } = await supabase
+      .from('custom_forms')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (!data) {
       setLoading(false);
+      return;
     }
-    if (id) load();
-  }, [id]);
+
+    setForm(data);
+    setLoading(false);
+  }
+
+  if (id) load();
+}, [id, supabase]);
 
   function setAnswer(qId: string, val: any) {
     setAnswers(p => ({ ...p, [qId]: val }));
