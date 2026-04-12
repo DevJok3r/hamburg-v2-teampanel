@@ -761,49 +761,102 @@ function canSeeCustomForm(form: CustomForm): boolean {
         </div>
       )}
 
-      {/* ══ MODAL: FORMULAR-ANTWORT DETAIL ══ */}
-      {selectedResponse && (() => {
-        const form = forms.find(f => f.id === selectedResponse.form_id);
-        return (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-[#1a1d27] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-              <div className="p-6 border-b border-white/10 flex items-center justify-between">
-                <div>
-                  <h2 className="text-white font-bold text-lg">{form?.title || 'Formular-Antwort'}</h2>
-                  <div className="flex items-center gap-2 mt-1">
-                    {form && <span className={`text-xs px-2 py-0.5 rounded border ${DEPT_COLORS[form.department] || 'text-gray-400 bg-gray-500/10 border-gray-500/30'}`}>{form.department}</span>}
-                    <span className={`text-xs px-2 py-0.5 rounded border ${STATUS_STYLES[selectedResponse.status as keyof typeof STATUS_STYLES]}`}>{STATUS_LABELS[selectedResponse.status as keyof typeof STATUS_LABELS]}</span>
-                  </div>
-                </div>
-                <button onClick={() => setSelectedResponse(null)} className="text-gray-400 hover:text-white text-xl">✕</button>
-              </div>
-              <div className="p-6 space-y-3">
-                <p className="text-gray-500 text-xs">Eingegangen am {new Date(selectedResponse.created_at).toLocaleString('de-DE', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p>
-                {form?.questions.map(q => {
-                  const val = selectedResponse.answers[q.id];
-                  if (!val && val !== 0) return null;
-                  return (
-                    <div key={q.id} className="bg-[#0f1117] rounded-lg p-4">
-                      <p className="text-gray-400 text-xs font-medium mb-1">{q.label}</p>
-                      <p className="text-gray-300 text-sm whitespace-pre-wrap">{Array.isArray(val) ? val.join(', ') : String(val)}</p>
-                    </div>
-                  );
-                })}
-                {selectedResponse.status === 'pending' && (
-                  <div className="space-y-3 pt-3 border-t border-white/10">
-                    <textarea value={responseReviewNote} onChange={e => setResponseReviewNote(e.target.value)} placeholder="Anmerkung (optional)..." rows={2}
-                      className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-blue-500 resize-none" />
-                    <div className="flex gap-2 justify-end">
-                      <button onClick={() => reviewResponse(selectedResponse.id, 'rejected')} className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 font-medium text-sm px-4 py-2 rounded-lg transition">❌ Ablehnen</button>
-                      <button onClick={() => reviewResponse(selectedResponse.id, 'approved')} className="bg-green-600 hover:bg-green-700 text-white font-medium text-sm px-5 py-2 rounded-lg transition">✅ Annehmen</button>
-                    </div>
-                  </div>
+{/* ══ MODAL: FORMULAR-ANTWORT DETAIL ══ */}
+{selectedResponse && (
+  (() => {
+    const form = forms.find(f => f.id === selectedResponse.form_id);
+
+    return (
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="bg-[#1a1d27] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+
+          <div className="p-6 border-b border-white/10 flex items-center justify-between">
+            <div>
+              <h2 className="text-white font-bold text-lg">
+                {form?.title || 'Formular-Antwort'}
+              </h2>
+
+              <div className="flex items-center gap-2 mt-1">
+                {form && (
+                  <span className={`text-xs px-2 py-0.5 rounded border ${DEPT_COLORS[form.department] || 'text-gray-400 bg-gray-500/10 border-gray-500/30'}`}>
+                    {form.department}
+                  </span>
                 )}
+
+                <span className={`text-xs px-2 py-0.5 rounded border ${STATUS_STYLES[selectedResponse.status as keyof typeof STATUS_STYLES]}`}>
+                  {STATUS_LABELS[selectedResponse.status as keyof typeof STATUS_LABELS]}
+                </span>
               </div>
             </div>
+
+            <button
+              onClick={() => setSelectedResponse(null)}
+              className="text-gray-400 hover:text-white text-xl"
+            >
+              ✕
+            </button>
           </div>
-        );
-      })()}
+
+          <div className="p-6 space-y-3">
+            <p className="text-gray-500 text-xs">
+              Eingegangen am{" "}
+              {new Date(selectedResponse.created_at).toLocaleString('de-DE', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </p>
+
+            {form?.questions.map(q => {
+              const val = selectedResponse.answers[q.id];
+              if (val === undefined || val === null || val === '') return null;
+
+              return (
+                <div key={q.id} className="bg-[#0f1117] rounded-lg p-4">
+                  <p className="text-gray-400 text-xs font-medium mb-1">{q.label}</p>
+                  <p className="text-gray-300 text-sm whitespace-pre-wrap">
+                    {Array.isArray(val) ? val.join(', ') : String(val)}
+                  </p>
+                </div>
+              );
+            })}
+
+            {selectedResponse.status === 'pending' && (
+              <div className="space-y-3 pt-3 border-t border-white/10">
+                <textarea
+                  value={responseReviewNote}
+                  onChange={e => setResponseReviewNote(e.target.value)}
+                  placeholder="Anmerkung (optional)..."
+                  rows={2}
+                  className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-blue-500 resize-none"
+                />
+
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => reviewResponse(selectedResponse.id, 'rejected')}
+                    className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 font-medium text-sm px-4 py-2 rounded-lg transition"
+                  >
+                    ❌ Ablehnen
+                  </button>
+
+                  <button
+                    onClick={() => reviewResponse(selectedResponse.id, 'approved')}
+                    className="bg-green-600 hover:bg-green-700 text-white font-medium text-sm px-5 py-2 rounded-lg transition"
+                  >
+                    ✅ Annehmen
+                  </button>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      </div>
+    );
+  })()
+)}
 
       {/* ══ MODAL: ZUGRIFFSRECHTE (nur Top Management) ══ */}
       const isTopManagement =
@@ -837,7 +890,7 @@ function canSeeCustomForm(form: CustomForm): boolean {
             </div>
           </div>
         </div>
-      )}
+      )
 
       {/* ══ MODAL: FORM BUILDER ══ */}
       {showFormBuilder && (
@@ -867,27 +920,43 @@ function canSeeCustomForm(form: CustomForm): boolean {
                 </div>
               </div>
 
-              {/* Zugriffsrechte im Form Builder */}
-              <div>
-                  <label className="text-gray-400 text-xs mb-2 block">🔑 Zugriffsrechte – Wer kann dieses Formular sehen?</label>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {ALL_ROLES.filter(r => r !== 'top_management').map(role => (
-                      <label key={role} className="flex items-center gap-2 bg-[#0f1117] rounded-lg px-3 py-2 cursor-pointer hover:bg-white/5 transition">
-                        <input type="checkbox" checked={fbAllowedRoles.includes(role)}
-                          onChange={() => setFbAllowedRoles(p => p.includes(role) ? p.filter(r => r !== role) : [...p, role])}
-                          className="accent-blue-500" />
-                        <span className="text-white text-xs">{ROLE_LABELS[role] || role}</span>
-                      </label>
-                    ))}
-                        <input type="checkbox" checked={fbAllowedRoles.includes(role)}
-                          onChange={() => setFbAllowedRoles(p => p.includes(role) ? p.filter(r => r !== role) : [...p, role])}
-                          className="accent-blue-500" />
-                        <span className="text-white text-xs">{ROLE_LABELS[role] || role}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <p className="text-gray-600 text-xs mt-1">Top Management hat immer Zugriff.</p>
-                </div>
+{/* ══ Zugriffsrechte im Form Builder ══ */}
+<div className="space-y-2">
+  <label className="text-gray-400 text-xs block">
+    🔑 Zugriffsrechte – Wer kann dieses Formular sehen?
+  </label>
+
+  <div className="grid grid-cols-2 gap-1.5">
+    {ALL_ROLES
+      .filter((r) => r !== 'top_management')
+      .map((role) => (
+        <label
+          key={role}
+          className="flex items-center gap-2 bg-[#0f1117] rounded-lg px-3 py-2 cursor-pointer hover:bg-white/5 transition"
+        >
+          <input
+            type="checkbox"
+            checked={fbAllowedRoles.includes(role)}
+            onChange={() =>
+              setFbAllowedRoles((prev) =>
+                prev.includes(role)
+                  ? prev.filter((r) => r !== role)
+                  : [...prev, role]
+              )
+            }
+            className="accent-blue-500"
+          />
+          <span className="text-white text-xs">
+            {ROLE_LABELS[role] || role}
+          </span>
+        </label>
+      ))}
+  </div>
+
+  <p className="text-gray-600 text-xs">
+    Top Management hat immer Zugriff.
+  </p>
+</div>
 
               {/* Fragen */}
               <div>
