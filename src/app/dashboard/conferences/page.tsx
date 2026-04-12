@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createClientSupabaseClient } from '@/lib/supabase/client';
-import { UserRole, AttendanceStatus } from '@/types';
+import { UserRole } from '@/types';
 import RoleBadge from '@/components/RoleBadge';
 
 const STATUS_STYLES = {
@@ -417,9 +417,9 @@ export default function ConferencesPage() {
             </div>
             <div className="grid grid-cols-3 gap-3 mb-4">
               {(['present', 'excused', 'absent'] as AttendanceStatus[]).map(s => (
-                <div key={s} className={`rounded-lg p-3 border text-center ${ATTENDANCE_STYLES[s]}`}>
+                <div key={s} className={`rounded-lg p-3 border text-center ${ATTENDANCE_STYLES[s as keyof typeof ATTENDANCE_STYLES]}`}>
                   <p className="text-lg font-bold">{activeAttendance.attendance.filter(a => a.status === s).length}</p>
-                  <p className="text-xs">{ATTENDANCE_LABELS[s]}</p>
+                  <p className="text-xs">{ATTENDANCE_LABELS[s as keyof typeof ATTENDANCE_LABELS]}</p>
                 </div>
               ))}
             </div>
@@ -442,14 +442,14 @@ export default function ConferencesPage() {
                           <button key={status}
                             onClick={() => updateAttendance(activeAttendance.conference.id, a.user_id, status)}
                             className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition
-                              ${a.status === status ? ATTENDANCE_STYLES[status] : 'bg-white/5 text-gray-500 border-white/10 hover:bg-white/10'}`}>
-                            {ATTENDANCE_LABELS[status]}
+                              ${a.status === status ? ATTENDANCE_STYLES[status as keyof typeof ATTENDANCE_STYLES] : 'bg-white/5 text-gray-500 border-white/10 hover:bg-white/10'}`}>
+                            {ATTENDANCE_LABELS[status as keyof typeof ATTENDANCE_LABELS]}
                           </button>
                         ))}
                       </div>
                     ) : (
-                      <span className={`text-xs px-2 py-1 rounded border ${ATTENDANCE_STYLES[a.status as AttendanceStatus]}`}>
-                        {ATTENDANCE_LABELS[a.status as AttendanceStatus]}
+                      <span className={`text-xs px-2 py-1 rounded border ${ATTENDANCE_STYLES[a.status as keyof typeof ATTENDANCE_STYLES]}`}>
+                        {ATTENDANCE_LABELS[a.status as keyof typeof ATTENDANCE_LABELS]}
                       </span>
                     )}
                   </div>

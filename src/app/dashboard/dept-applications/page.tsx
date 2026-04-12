@@ -109,7 +109,10 @@ export default function DeptApplicationsPage() {
     setMyRole(role);
     const deptMap: Record<string,string> = { moderation_team:'moderation', development_team:'development', content_team:'social_media', event_team:'event' };
     const depts: string[] = profile.departments || [];
-    const access = role === 'top_management' ? Object.keys(DEPT_LABELS) : depts.map(d => deptMap[d]).filter(Boolean);
+    const access =
+  ['projektleitung', 'stv_projektleitung'].includes(role)
+    ? Object.keys(DEPT_LABELS)
+    : depts.map(d => deptMap[d]).filter(Boolean);
     setMyAccess(access);
 
     const [appsRes, phasesRes, formsRes, responsesRes, membersRes, deptFormsRes] = await Promise.all([
@@ -132,17 +135,22 @@ export default function DeptApplicationsPage() {
   useEffect(() => { load(); }, []);
 
   /* ── Permissions ── */
-  function canSeeDept(dept: string) {
-    if (myRole === 'top_management') return true;
-    if (Object.keys(DEPT_LABELS).includes(dept)) return myAccess.includes(dept);
-    return false;
-  }
+/* ── Permissions ── */
 
-  function canSeeCustomForm(form: CustomForm): boolean {
-    if (myRole === 'top_management') return true;
-    if (!myRole) return false;
-    return (form.allowed_roles || []).includes(myRole);
-  }
+const isTopManagement =
+  myRole ? ['projektleitung', 'stv_projektleitung'].includes(myRole) : false;
+
+function canSeeDept(dept: string) {
+  if (isTopManagement) return true;
+  if (Object.keys(DEPT_LABELS).includes(dept)) return myAccess.includes(dept);
+  return false;
+}
+
+function canSeeCustomForm(form: CustomForm): boolean {
+  if (isTopManagement) return true;
+  if (!myRole) return false;
+  return (form.allowed_roles || []).includes(myRole);
+}
 
   /* ── Phases ── */
   function getPhase(dept: string): boolean { return phases.find(p => p.department === dept)?.is_open ?? true; }
@@ -269,7 +277,7 @@ export default function DeptApplicationsPage() {
   const responseCount = visibleResponses.filter(r => r.status === 'pending').length;
 
   // All custom forms visible to top management for links tab
-  const allVisibleForms = myRole === 'top_management' ? forms : visibleForms;
+  const allVisibleForms = isTopManagement ? forms : visibleForms;
 
   if (loading) return <div className="text-gray-400 text-center py-12">Lade...</div>;
 
@@ -510,9 +518,7 @@ export default function DeptApplicationsPage() {
                             {f.is_active ? '🔒' : '🔓'}
                           </button>
                           <button onClick={() => openFormBuilder(f)} className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 text-xs px-2.5 py-1 rounded-lg transition">✏️</button>
-                          {myRole === 'top_management' && (
-                            <button onClick={() => { setAccessModalForm(f); setAccessRoles(f.allowed_roles || []); }} className="bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 text-xs px-2.5 py-1 rounded-lg transition">🔑</button>
-                          )}
+                          <button onClick={() => { setAccessModalForm(f); setAccessRoles(f.allowed_roles || []); }} className="bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 text-xs px-2.5 py-1 rounded-lg transition">🔑</button>
                           <button onClick={() => deleteForm(f.id)} className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs px-2.5 py-1 rounded-lg transition">🗑️</button>
                           <button onClick={() => { navigator.clipboard.writeText(`${BASE_URL}/apply/form/${f.id}`); showMsg('Link kopiert!'); }} className="bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white text-xs px-2.5 py-1 rounded-lg transition">📋</button>
                         </div>
@@ -554,7 +560,7 @@ export default function DeptApplicationsPage() {
                         <div className="flex gap-1.5 flex-shrink-0">
                           <button onClick={() => toggleFormActive(f)} className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition ${f.is_active ? 'bg-gray-500/10 hover:bg-gray-500/20 text-gray-400 border-gray-500/30' : 'bg-green-500/10 hover:bg-green-500/20 text-green-400 border-green-500/30'}`}>{f.is_active ? '🔒' : '🔓'}</button>
                           <button onClick={() => openFormBuilder(f)} className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 text-xs px-2.5 py-1 rounded-lg transition">✏️</button>
-                          {myRole === 'top_management' && (
+                          {myRole && ['projektleitung', 'stv_projektleitung'].includes(myRole) && (
                             <button onClick={() => { setAccessModalForm(f); setAccessRoles(f.allowed_roles || []); }} className="bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 text-xs px-2.5 py-1 rounded-lg transition">🔑</button>
                           )}
                           <button onClick={() => deleteForm(f.id)} className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs px-2.5 py-1 rounded-lg transition">🗑️</button>
@@ -619,7 +625,7 @@ export default function DeptApplicationsPage() {
                     <div className="flex gap-2 flex-shrink-0">
                       <button onClick={() => toggleFormActive(form)} className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition ${form.is_active ? 'bg-gray-500/10 hover:bg-gray-500/20 text-gray-400 border-gray-500/30' : 'bg-green-500/10 hover:bg-green-500/20 text-green-400 border-green-500/30'}`}>{form.is_active ? 'Deaktivieren' : 'Aktivieren'}</button>
                       <button onClick={() => openFormBuilder(form)} className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 text-xs px-3 py-1.5 rounded-lg font-medium transition">✏️ Bearbeiten</button>
-                      {myRole === 'top_management' && (
+                      {myRole && ['projektleitung', 'stv_projektleitung'].includes(myRole) && (
                         <button onClick={() => { setAccessModalForm(form); setAccessRoles(form.allowed_roles || []); }} className="bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 text-xs px-3 py-1.5 rounded-lg font-medium transition">🔑 Zugriff</button>
                       )}
                       <button onClick={() => deleteForm(form.id)} className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs px-3 py-1.5 rounded-lg font-medium transition">🗑️</button>
@@ -800,13 +806,14 @@ export default function DeptApplicationsPage() {
       })()}
 
       {/* ══ MODAL: ZUGRIFFSRECHTE (nur Top Management) ══ */}
-      {accessModalForm && myRole === 'top_management' && (
+      const isTopManagement =
+  myRole ? ['projektleitung', 'stv_projektleitung'].includes(myRole) : false;
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-[#1a1d27] border border-white/10 rounded-2xl w-full max-w-md">
             <div className="p-6 border-b border-white/10 flex items-center justify-between">
               <div>
                 <h2 className="text-white font-bold text-lg">🔑 Zugriffsrechte</h2>
-                <p className="text-gray-400 text-xs mt-1">{accessModalForm.title}</p>
+                <p className="text-gray-400 text-xs mt-1">{accessModalForm?.title}</p>
               </div>
               <button onClick={() => setAccessModalForm(null)} className="text-gray-400 hover:text-white text-xl">✕</button>
             </div>
@@ -861,8 +868,7 @@ export default function DeptApplicationsPage() {
               </div>
 
               {/* Zugriffsrechte im Form Builder */}
-              {myRole === 'top_management' && (
-                <div>
+              <div>
                   <label className="text-gray-400 text-xs mb-2 block">🔑 Zugriffsrechte – Wer kann dieses Formular sehen?</label>
                   <div className="grid grid-cols-2 gap-1.5">
                     {ALL_ROLES.filter(r => r !== 'top_management').map(role => (
@@ -873,10 +879,15 @@ export default function DeptApplicationsPage() {
                         <span className="text-white text-xs">{ROLE_LABELS[role] || role}</span>
                       </label>
                     ))}
+                        <input type="checkbox" checked={fbAllowedRoles.includes(role)}
+                          onChange={() => setFbAllowedRoles(p => p.includes(role) ? p.filter(r => r !== role) : [...p, role])}
+                          className="accent-blue-500" />
+                        <span className="text-white text-xs">{ROLE_LABELS[role] || role}</span>
+                      </label>
+                    ))}
                   </div>
                   <p className="text-gray-600 text-xs mt-1">Top Management hat immer Zugriff.</p>
                 </div>
-              )}
 
               {/* Fragen */}
               <div>

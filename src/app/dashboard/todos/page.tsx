@@ -153,10 +153,30 @@ export default function TodosPage() {
   }
 
   // Permissions
-  const isTopManagement = myRole === 'top_management';
-  const isStaffRole = myRole ? ['junior_management', 'management', 'top_management'].includes(myRole) : false;
-  const canAssign = isStaffRole;
-  const canDelete = (todo: Todo) => isTopManagement || todo.user_id === myId;
+// Permissions (CandyLife Rollen angepasst)
+// ===== CandyLife Permissions (Role-basiert) =====
+
+// Leitungsebene (höchste Rechte)
+const isTopManagement = myRole ? [
+  'projektleitung',
+  'stv_projektleitung'
+].includes(myRole) : false;
+
+// Teamleitung + höher
+const isTeamleitungPlus = myRole ? [
+  'projektleitung',
+  'stv_projektleitung',
+  'manager',
+  'teamleitung',
+  'stv_teamleitung'
+].includes(myRole) : false;
+
+// Darf zuweisen
+const canAssign = isTeamleitungPlus;
+
+// Löschen: nur Leitungsebene oder eigener Todo
+const canDelete = (todo: Todo) =>
+  isTopManagement || todo.user_id === myId;
 
   // Sichtbarkeit:
   // - Top Management sieht ALLES

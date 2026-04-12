@@ -1,3 +1,5 @@
+export type ApplicationStatus = 'pending' | 'approved' | 'rejected';
+
 export type UserRole =
   | 'projektleitung'
   | 'stv_projektleitung'
@@ -96,4 +98,19 @@ export interface Todo {
   due_date?: string;
   tags?: string[];
   created_at: string;
+}
+
+export interface TeamApplication {
+  id: string;
+  applicant_id: string;
+  partner_name: string;
+  reason: string;
+  experience: string;
+  availability: string;
+  status: ApplicationStatus;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  created_at: string;
+  profiles?: Pick<Profile, 'username' | 'role'>;
 }
