@@ -26,15 +26,18 @@ const DEPT_LABELS: Record<string, string> = {
   event: 'Event Team', development: 'Development Team',
 };
 
+'use client';
+
 export default function CustomFormPage() {
   const params = useParams();
-  const id     = params?.id as string;
-  const [form, setForm]       = useState<CustomForm | null>(null);
+  const id = params?.id as string;
+
+  const [form, setForm] = useState<CustomForm | null>(null);
   const [loading, setLoading] = useState(true);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [errors, setErrors]   = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
