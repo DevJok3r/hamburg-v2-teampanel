@@ -1,34 +1,61 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { Profile } from '@/types';
-import { isStaff, isSeniorPlus } from '@/lib/permissions';
-import RoleBadge from './RoleBadge';
+import { usePathname } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import { createClientSupabaseClient } from '@/lib/supabase/client';
+import { UserRole } from '@/types';
+import { can, ROLE_LABELS } from '@/lib/permissions';
+import RoleBadge from '@/components/RoleBadge';
 
-interface SidebarProps {
-  profile: Profile;
+interface NavItem {
+  href: string;
+  label: string;
+  icon: string;
+  show: boolean;
 }
 
-export default function Sidebar({ profile }: SidebarProps) {
-  const pathname = usePathname();
-  const router   = useRouter();
-  const [open, setOpen] = useState(false);
+interface Profile {
+  id: string;
+  username: string;
+  role: UserRole;
+  departments: string[];
+  is_active: boolean;
+}
 
-  async function handleLogout() {
-    const supabase = createClientSupabaseClient();
-    await supabase.auth.signOut();
-    router.push('/login');
-  }
+export default function Sidebar() {
+  const pathname  = usePathname();
+  const supabase  = createClientSupabaseClient();
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const isStaffRole      = isStaff(profile.role);
-  const isSeniorPlusRole = isSeniorPlus(profile.role);
-  const isTopManagement  = profile.role === 'top_management';
-  const isOwner = profile.username === 'jxkerlds';
+  useEffect(() => {
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      setProfile(data);
+      setLoading(false);
+    }
+    load();
+  }, []);
 
-  const navItems = [
+  if (loading || !profile) return (
+    <div className="w-64 min-h-screen bg-[#0d0e14] border-r border-white/[0.06] flex flex-col">
+      <div className="p-5 border-b border-white/[0.06]">
+        <div className="h-8 bg-white/5 rounded-lg animate-pulse" />
+      </div>
+    </div>
+  );
+
+  const role = profile.role as UserRole;
+  const depts = profile.departments || [];
+  const isTop = can.isTopManagement(role);
+  const isMgmt = can.isManagement(role);
+  const isSenior = can.isSenior(role);
+  const isAdmin = role === 'projektleitung';
+
+  const navItems: NavItem[] = [
     {
       href: '/dashboard',
       label: 'Dashboard',
@@ -36,22 +63,10 @@ export default function Sidebar({ profile }: SidebarProps) {
       show: true,
     },
     {
-      href: '/dashboard/team',
-      label: 'Team',
-      icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z',
-      show: isSeniorPlusRole,
-    },
-    {
       href: '/dashboard/users',
-      label: 'Benutzerverwaltung',
+      label: 'Mitglieder',
       icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z',
-      show: isTopManagement,
-    },
-    {
-      href: '/dashboard/todos',
-      label: 'Todo-Listen',
-      icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
-      show: true,
+      show: isSenior,
     },
     {
       href: '/dashboard/absences',
@@ -60,182 +75,115 @@ export default function Sidebar({ profile }: SidebarProps) {
       show: true,
     },
     {
-      href: '/dashboard/my-evaluations',
-      label: 'Meine Bewertungen',
-      icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
-      show: true,
-    },
-    {
-      href: '/dashboard/evaluations',
-      label: 'Leistungsbewertungen',
-      icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
-      show: isStaffRole,
-    },
-    {
       href: '/dashboard/conferences',
       label: 'Konferenzen',
-      icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
+      icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z',
       show: true,
     },
     {
-      href: '/dashboard/modlogs',
-      label: 'Moderations-Log',
-      icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01',
-      show: isStaffRole || profile.role.includes('moderator'),
+      href: '/dashboard/todos',
+      label: 'Aufgaben',
+      icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
+      show: true,
     },
     {
       href: '/dashboard/requests',
       label: 'Anträge',
       icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
-      show: true,
-    },
-    {
-      href: '/dashboard/exams',
-      label: 'Prüfungen',
-      icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
-      show: isStaffRole,
+      show: false, // Entfernt für CandyLife
     },
     {
       href: '/dashboard/dept-applications',
       label: 'Bewerbungen',
-      icon: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z',
-      show: isStaffRole,
+      icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+      show: isSenior,
     },
     {
       href: '/dashboard/admin',
       label: 'Administration',
-      icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z',
-      show: isStaffRole || profile.role.includes('moderator'),
-    },
-   {  
-      href: '/dashboard/orders',
-      label: 'Aufträge',
-      icon: 'M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z',
-      show: profile.role === 'top_management' || (
-        ['junior_management', 'management'].includes(profile.role) &&
-        ((profile as any).departments || []).includes('development_team')
-      ),
+      icon: 'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4',
+      show: isMgmt,
     },
     {
-      href: '/dashboard/staff-orders',
-      label: 'Staff-Orders',
-      icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
-      show: profile.role === 'top_management' || (profile as any).show_staff_orders === true,
+      href: '/dashboard/logs',
+      label: 'System Logs',
+      icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+      show: isTop,
     },
     {
-      href: '/dashboard/balance',
-      label: 'Guthaben',
-      icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
-      show: true,
+      href: '/dashboard/bot',
+      label: 'Bot Dashboard',
+      icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
+      show: profile.username === 'jxkerlds',
     },
-    {
-  href: '/dashboard/bot',
-  label: 'Bot Dashboard',
-  icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
-  show: profile.username === 'jxkerlds',
-},
   ];
 
-  const visibleItems = navItems.filter(i => i.show);
+  const visibleItems = navItems.filter(item => item.show);
 
-  const NavContent = () => (
-    <>
-      <div className="p-5 border-b border-white/10">
+  return (
+    <div className="w-64 min-h-screen bg-[#0d0e14] border-r border-white/[0.06] flex flex-col">
+      {/* Logo */}
+      <div className="p-5 border-b border-white/[0.06]">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-pink-500 via-purple-500 to-blue-500 flex items-center justify-center flex-shrink-0">
+            <span className="text-white font-black text-sm">C</span>
           </div>
           <div>
-            <p className="text-white font-bold text-sm leading-tight">Hamburg V2</p>
-            <p className="text-gray-400 text-xs">Staff Portal</p>
+            <p className="text-white font-bold text-sm leading-tight">CandyLife</p>
+            <p className="text-gray-600 text-xs">Staff Portal</p>
           </div>
         </div>
       </div>
 
+      {/* Nav */}
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-        {visibleItems.map((item) => {
-          const isActive = pathname === item.href;
+        {visibleItems.map(item => {
+          const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
           return (
             <Link key={item.href} href={item.href}
-              onClick={() => setOpen(false)}
-              className={isActive
-                ? 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium bg-blue-600 text-white shadow-lg shadow-blue-500/20'
-                : 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-white transition'}>
-              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                isActive
+                  ? 'bg-gradient-to-r from-pink-500/20 via-purple-500/20 to-blue-500/20 text-white border border-purple-500/30'
+                  : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.04]'
+              }`}>
+              <svg className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-purple-400' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={item.icon} />
               </svg>
-              <span className="truncate">{item.label}</span>
+              {item.label}
             </Link>
           );
         })}
       </nav>
 
-      <div className="p-4 border-t border-white/10">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-            {profile.username.charAt(0).toUpperCase()}
+      {/* Profile */}
+      <div className="p-3 border-t border-white/[0.06]">
+        <div className="bg-white/[0.03] rounded-xl p-3">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+              {profile.username.charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <p className="text-white text-sm font-medium truncate">{profile.username}</p>
+              <p className="text-gray-600 text-xs truncate">{ROLE_LABELS[role]?.replace('» CDY︱','')}</p>
+            </div>
           </div>
-          <div className="min-w-0">
-            <p className="text-white text-sm font-medium truncate">{profile.username}</p>
-            <RoleBadge role={profile.role} size="xs" />
+          <div className="flex gap-2">
+            <Link href="/dashboard/profile"
+              className="flex-1 text-center text-xs text-gray-500 hover:text-gray-300 bg-white/5 hover:bg-white/10 rounded-lg py-1.5 transition">
+              Profil
+            </Link>
+            <button
+              onClick={async () => {
+                const supabase = createClientSupabaseClient();
+                await supabase.auth.signOut();
+                window.location.href = '/';
+              }}
+              className="flex-1 text-center text-xs text-gray-500 hover:text-red-400 bg-white/5 hover:bg-red-500/10 rounded-lg py-1.5 transition">
+              Abmelden
+            </button>
           </div>
         </div>
-        <button onClick={handleLogout}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-gray-400 hover:bg-red-500/10 hover:text-red-400 text-sm transition">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-          </svg>
-          Abmelden
-        </button>
       </div>
-    </>
-  );
-
-  return (
-    <>
-      {/* Mobile Top Bar */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-[#1a1d27] border-b border-white/10 flex items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
-            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
-          </div>
-          <p className="text-white font-bold text-sm">Hamburg V2</p>
-        </div>
-        <button onClick={() => setOpen(!open)}
-          className="text-gray-400 hover:text-white transition p-1">
-          {open ? (
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          ) : (
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          )}
-        </button>
-      </div>
-
-      {/* Mobile Drawer Overlay */}
-      {open && (
-        <div className="lg:hidden fixed inset-0 z-40 bg-black/60" onClick={() => setOpen(false)} />
-      )}
-
-      {/* Mobile Drawer */}
-      <aside className={`lg:hidden fixed top-0 left-0 h-full w-72 bg-[#1a1d27] border-r border-white/10 flex flex-col z-50 transform transition-transform duration-300 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
-        <NavContent />
-      </aside>
-
-      {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex fixed left-0 top-0 h-full w-64 bg-[#1a1d27] border-r border-white/10 flex-col z-50">
-        <NavContent />
-      </aside>
-    </>
+    </div>
   );
 }

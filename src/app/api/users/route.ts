@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     .eq('id', session.user.id)
     .single();
 
-  if (!actorProfile || !can.createUser(actorProfile.role)) {
+  if (!actorProfile || !can.viewAllUsers(actorProfile.role)) {
     return NextResponse.json({ error: 'Keine Berechtigung' }, { status: 403 });
   }
 

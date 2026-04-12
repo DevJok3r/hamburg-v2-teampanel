@@ -1,115 +1,84 @@
 import { UserRole } from '@/types';
 
-export const ROLE_HIERARCHY: Record<UserRole, number> = {
-  top_management:          100,
-  management:               80,
-  junior_management:        80, // gleichgestellt mit management
-  senior_moderator:         40,
-  senior_developer:         40,
-  senior_content_producer:  40,
-  senior_event_organizer:   40,
-  moderator:                20,
-  developer:                20,
-  content_producer:         20,
-  event_organizer:          20,
-  trial_moderator:          10,
-  trial_developer:          10,
-  trial_content_producer:   10,
-  trial_event_organizer:    10,
+export const ROLE_LABELS: Record<UserRole, string> = {
+  projektleitung:           '» CDY︱Projektleitung',
+  stv_projektleitung:       '» CDY︱Stv. Projektleitung',
+  manager:                  '» CDY︱Manager',
+  teamleitung:              '» CDY︱Teamleitung',
+  stv_teamleitung:          '» CDY︱Stv. Teamleitung',
+  head_developer:           '» CDY︱Head Developer',
+  senior_developer:         '» CDY︱Senior Developer',
+  developer:                '» CDY︱Developer',
+  junior_developer:         '» CDY︱Junior Developer',
+  fraktionsmanagement:      '» CDY︱Fraktionsmanagement',
+  fraktionsverwaltung:      '» CDY︱Fraktionsverwaltung',
+  junior_fraktionsverwaltung: '» CDY︱Junior Fraktionsverwaltung',
+  head_administrator:       '» CDY︱Head Administrator',
+  superadministrator:       '» CDY︱Superadministrator',
+  senior_administrator:     '» CDY︱Senior Administrator',
+  administrator:            '» CDY︱Administrator',
+  head_moderator:           '» CDY︱Head Moderator',
+  senior_moderator:         '» CDY︱Senior Moderator',
+  moderator:                '» CDY︱Moderator',
+  head_supporter:           '» CDY︱Head Supporter',
+  senior_supporter:         '» CDY︱Senior Supporter',
+  supporter:                '» CDY︱Supporter',
+  test_supporter:           '» CDY︱Test Supporter',
 };
 
-export function hasMinRole(userRole: UserRole, minRole: UserRole): boolean {
-  return ROLE_HIERARCHY[userRole] >= ROLE_HIERARCHY[minRole];
-}
+export const ROLE_HIERARCHY: Record<UserRole, number> = {
+  projektleitung:             100,
+  stv_projektleitung:         95,
+  manager:                    90,
+  teamleitung:                85,
+  stv_teamleitung:            80,
+  head_developer:             75,
+  senior_developer:           70,
+  developer:                  65,
+  junior_developer:           60,
+  fraktionsmanagement:        75,
+  fraktionsverwaltung:        65,
+  junior_fraktionsverwaltung: 55,
+  head_administrator:         75,
+  superadministrator:         70,
+  senior_administrator:       65,
+  administrator:              60,
+  head_moderator:             55,
+  senior_moderator:           50,
+  moderator:                  45,
+  head_supporter:             40,
+  senior_supporter:           35,
+  supporter:                  30,
+  test_supporter:             20,
+};
 
-// Hilfsfunktion: Ist Staff (Management oder Junior Management)
-export function isStaff(role: UserRole): boolean {
-  return ROLE_HIERARCHY[role] >= 80;
-}
+export const DEPT_LABELS: Record<string, string> = {
+  support:              '》Support《',
+  moderation:           '》Moderation《',
+  administration:       '》Administration《',
+  fraktionsmanagement:  '》Fraktionsmanagement《',
+  development:          '》Development《',
+  teamleitung:          '》Teamleitung《',
+  leitungsebene:        '》Leitungsebene《',
+};
 
-// Hilfsfunktion: Ist Senior oder höher
-export function isSeniorPlus(role: UserRole): boolean {
-  return ROLE_HIERARCHY[role] >= 40;
-}
+// Top level = Projektleitung + Stv. Projektleitung + Manager
+const TOP = (role: UserRole) => ['projektleitung','stv_projektleitung','manager'].includes(role);
+// Management level = TOP + Teamleitung + Stv. Teamleitung
+const MGMT = (role: UserRole) => TOP(role) || ['teamleitung','stv_teamleitung'].includes(role);
+// Senior level = MGMT + all Head roles + Super
+const SENIOR = (role: UserRole) => MGMT(role) || ['head_developer','head_administrator','head_moderator','head_supporter','superadministrator','fraktionsmanagement'].includes(role);
 
 export const can = {
-  // Benutzerverwaltung
-  createUser:      (role: UserRole) => isStaff(role),
-  editUser:        (role: UserRole) => isStaff(role),
-  deleteUser:      (role: UserRole) => role === 'top_management',
-  viewAllUsers:    (role: UserRole) => ROLE_HIERARCHY[role] >= 40, // Senior+
-  changePassword:  (role: UserRole) => role === 'top_management',
-  changeUsername:  (role: UserRole) => role === 'top_management',
-  kickMember:      (role: UserRole) => isStaff(role),
-  changeUserRole:  (actorRole: UserRole, targetRole: UserRole): boolean => {
-    if (actorRole === 'top_management') return true;
-    if (isStaff(actorRole)) return ROLE_HIERARCHY[targetRole] < 80;
-    return false;
-  },
-
-  // Abmeldungen
-  reviewAbsence:   (role: UserRole) => isStaff(role),
-  deleteAbsence:   (role: UserRole) => isStaff(role),
-  viewAllAbsences: (role: UserRole) => true, // alle können sehen
-
-  // Todos
-  viewAllTodos:    (role: UserRole) => isStaff(role),
-
-  // Einträge & Verwarnungen
-  manageEntries:   (role: UserRole) => isStaff(role),
-  deleteEntries:   (role: UserRole) => isStaff(role),
-  warnMember:      (role: UserRole) => isStaff(role),
-
-  // Konferenzen
-  manageConferences: (role: UserRole) => isStaff(role),
-
-  // Leistungsbewertungen
-  manageEvaluations: (role: UserRole) => isStaff(role),
-
-  // Administration
-  viewAdmin:       (role: UserRole) => isStaff(role),
-  viewAuditLog:    (role: UserRole) => role === 'top_management',
-  manageLogs:      (role: UserRole) => role === 'top_management',
-
-  // Webhooks & Automationen
-  manageWebhooks:  (role: UserRole) => role === 'top_management',
-
-  // Bewerbungen
-  viewApplications: (role: UserRole) => isStaff(role),
-};
-
-export const ROLE_LABELS: Record<UserRole, string> = {
-  top_management:          'Top Management',
-  management:              'Management',
-  junior_management:       'Junior Management',
-  senior_moderator:        'Senior Moderator',
-  senior_developer:        'Senior Developer',
-  senior_content_producer: 'Senior Content Producer',
-  senior_event_organizer:  'Senior Event Organizer',
-  moderator:               'Moderator',
-  developer:               'Developer',
-  content_producer:        'Content Producer',
-  event_organizer:         'Event Organizer',
-  trial_moderator:         'Trial Moderator',
-  trial_developer:         'Trial Developer',
-  trial_content_producer:  'Trial Content Producer',
-  trial_event_organizer:   'Trial Event Organizer',
-};
-
-export const ROLE_COLORS: Record<UserRole, string> = {
-  top_management:          'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  management:              'bg-red-500/20 text-red-400 border-red-500/30',
-  junior_management:       'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  senior_moderator:        'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  senior_developer:        'bg-green-500/20 text-green-400 border-green-500/30',
-  senior_content_producer: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-  senior_event_organizer:  'bg-pink-500/20 text-pink-400 border-pink-500/30',
-  moderator:               'bg-blue-400/20 text-blue-300 border-blue-400/30',
-  developer:               'bg-green-400/20 text-green-300 border-green-400/30',
-  content_producer:        'bg-purple-400/20 text-purple-300 border-purple-400/30',
-  event_organizer:         'bg-pink-400/20 text-pink-300 border-pink-400/30',
-  trial_moderator:         'bg-gray-500/20 text-gray-400 border-gray-500/30',
-  trial_developer:         'bg-gray-500/20 text-gray-400 border-gray-500/30',
-  trial_content_producer:  'bg-gray-500/20 text-gray-400 border-gray-500/30',
-  trial_event_organizer:   'bg-gray-500/20 text-gray-400 border-gray-500/30',
+  viewAdmin:        (role: UserRole) => MGMT(role),
+  viewAllUsers:     (role: UserRole) => SENIOR(role),
+  changeUserRole:   (myRole: UserRole, targetRole: UserRole) => ROLE_HIERARCHY[myRole] > ROLE_HIERARCHY[targetRole],
+  deleteEntries:    (role: UserRole) => MGMT(role),
+  manageAbsences:   (role: UserRole) => SENIOR(role),
+  manageConferences:(role: UserRole) => SENIOR(role),
+  viewApplications: (role: UserRole) => SENIOR(role),
+  manageApplications:(role: UserRole) => MGMT(role),
+  isTopManagement:  (role: UserRole) => TOP(role),
+  isManagement:     (role: UserRole) => MGMT(role),
+  isSenior:         (role: UserRole) => SENIOR(role),
 };
