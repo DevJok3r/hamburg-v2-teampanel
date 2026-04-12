@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createBrowserClient } from '@supabase/ssr';
 import { useParams } from 'next/navigation';
+import { createBrowserClient } from '@supabase/ssr';
 
 interface Question {
   id: string;
@@ -22,14 +22,17 @@ interface CustomForm {
 }
 
 export default function CustomFormPage() {
-  const params    = useParams();
-  const id        = params?.id as string;
-  const [form, setForm]           = useState<CustomForm | null>(null);
-  const [loading, setLoading]     = useState(true);
-  const [answers, setAnswers]     = useState<Record<string, any>>({});
+  const params = useParams();
+
+  // SAFE PARAM HANDLING (verhindert "is not a module" / undefined crashes)
+  const id = Array.isArray(params?.id) ? params.id[0] : params?.id;
+
+  const [form, setForm] = useState<CustomForm | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [errors, setErrors]       = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -37,39 +40,81 @@ export default function CustomFormPage() {
   );
 
   useEffect(() => {
-    async function load() {
-      const { data } = await supabase.from('custom_forms').select('*').eq('id', id).single();
-      setForm(data);
+    if (!id) return;
+
+    const load = async () => {
+      const { data, error } = await supabase
+        .from('custom_forms')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (error) {
+        console.error(error);
+        setLoading(false);
+        return;
+      }
+
+      setForm(data as CustomForm);
       setLoading(false);
-    }
-    if (id) load();
+    };
+
+    load();
   }, [id]);
 
-  function setAnswer(qId: string, val: any) {
-    setAnswers(p => ({ ...p, [qId]: val }));
-    setErrors(p => { const n = { ...p }; delete n[qId]; return n; });
+  function setAnswer(qId: string, val: unknown) {
+    setAnswers(prev => ({ ...prev, [qId]: val }));
+    setErrors(prev => {
+      const copy = { ...prev };
+      delete copy[qId];
+      return copy;
+    });
   }
 
   function toggleCheckbox(qId: string, option: string) {
-    const current: string[] = answers[qId] || [];
-    setAnswer(qId, current.includes(option) ? current.filter(o => o !== option) : [...current, option]);
+    const current = (answers[qId] as string[]) || [];
+    setAnswer(
+      qId,
+      current.includes(option)
+        ? current.filter(o => o !== option)
+        : [...current, option]
+    );
   }
 
   async function submit() {
     if (!form) return;
+
     const newErrors: Record<string, string> = {};
+
     form.questions.forEach(q => {
-      if (q.required) {
-        const v = answers[q.id];
-        if (!v || (Array.isArray(v) && v.length === 0) || String(v).trim() === '')
-          newErrors[q.id] = 'Dieses Feld ist erforderlich.';
+      if (!q.required) return;
+
+      const v = answers[q.id];
+
+      if (
+        v === undefined ||
+        v === null ||
+        (Array.isArray(v) && v.length === 0) ||
+        String(v).trim() === ''
+      ) {
+        newErrors[q.id] = 'Dieses Feld ist erforderlich.';
       }
     });
-    if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return; }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+
     setSubmitting(true);
-    await supabase.from('custom_form_responses').insert({ form_id: form.id, answers });
-    setSubmitted(true);
+
+    await supabase.from('custom_form_responses').insert({
+      form_id: form.id,
+      answers
+    });
+
     setSubmitting(false);
+    setSubmitted(true);
   }
 
   if (loading) return (
@@ -80,31 +125,22 @@ export default function CustomFormPage() {
 
   if (!form) return (
     <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-4">
-      <div className="text-center">
-        <p className="text-6xl mb-4">❌</p>
-        <h1 className="text-white font-bold text-2xl mb-2">Formular nicht gefunden</h1>
-        <p className="text-gray-400 text-sm">Dieses Formular existiert nicht oder wurde gelöscht.</p>
-      </div>
+      <div className="text-center text-white">Formular nicht gefunden</div>
     </div>
   );
 
   if (!form.is_active) return (
     <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-4">
-      <div className="text-center">
-        <p className="text-6xl mb-4">🔒</p>
-        <h1 className="text-white font-bold text-2xl mb-2">Bewerbungsphase geschlossen</h1>
-        <p className="text-gray-400 text-sm">Dieses Bewerbungsformular ist aktuell nicht aktiv.</p>
-        <p className="text-gray-500 text-xs mt-2">Bitte schaue zu einem späteren Zeitpunkt wieder vorbei.</p>
+      <div className="text-center text-white">
+        Bewerbungsphase geschlossen
       </div>
     </div>
   );
 
   if (submitted) return (
     <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-4">
-      <div className="text-center">
-        <p className="text-6xl mb-4">✅</p>
-        <h1 className="text-white font-bold text-2xl mb-2">Bewerbung eingegangen!</h1>
-        <p className="text-gray-400 text-sm">Deine Bewerbung wurde erfolgreich übermittelt. Wir melden uns bei dir.</p>
+      <div className="text-center text-white">
+        Bewerbung erfolgreich gesendet
       </div>
     </div>
   );
@@ -112,87 +148,53 @@ export default function CustomFormPage() {
   return (
     <div className="min-h-screen bg-[#0f1117] py-12 px-4">
       <div className="max-w-2xl mx-auto space-y-6">
+
         <div className="bg-[#1a1d27] border border-white/10 rounded-2xl p-6">
-          <h1 className="text-white font-bold text-2xl mb-1">{form.title}</h1>
-          {form.description && <p className="text-gray-400 text-sm mb-3">{form.description}</p>}
-          <span className="text-xs px-2 py-0.5 rounded border text-purple-400 bg-purple-500/10 border-purple-500/30">{form.department}</span>
+          <h1 className="text-white text-2xl font-bold">{form.title}</h1>
+          {form.description && (
+            <p className="text-gray-400 text-sm">{form.description}</p>
+          )}
         </div>
 
         <div className="space-y-4">
           {form.questions.map((q, idx) => (
-            <div key={q.id} className="bg-[#1a1d27] border border-white/10 rounded-xl p-5 space-y-3">
-              <label className="text-white text-sm font-medium flex items-start gap-1">
-                <span className="text-gray-500 text-xs mt-0.5">{idx + 1}.</span>
-                <span>{q.label}{q.required && <span className="text-red-400 ml-1">*</span>}</span>
+            <div key={q.id} className="bg-[#1a1d27] p-5 rounded-xl">
+              <label className="text-white text-sm">
+                {idx + 1}. {q.label}
               </label>
+
               {q.type === 'text' && (
-                <input value={answers[q.id] || ''} onChange={e => setAnswer(q.id, e.target.value)}
-                  className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500" />
+                <input
+                  className="w-full mt-2 bg-[#0f1117] text-white p-2 rounded"
+                  value={(answers[q.id] as string) || ''}
+                  onChange={e => setAnswer(q.id, e.target.value)}
+                />
               )}
+
               {q.type === 'textarea' && (
-                <textarea value={answers[q.id] || ''} onChange={e => setAnswer(q.id, e.target.value)} rows={4}
-                  className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500 resize-none" />
+                <textarea
+                  className="w-full mt-2 bg-[#0f1117] text-white p-2 rounded"
+                  value={(answers[q.id] as string) || ''}
+                  onChange={e => setAnswer(q.id, e.target.value)}
+                />
               )}
-              {q.type === 'select' && (
-                <select value={answers[q.id] || ''} onChange={e => setAnswer(q.id, e.target.value)}
-                  className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500">
-                  <option value="">Bitte wählen...</option>
-                  {(q.options || []).map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
+
+              {errors[q.id] && (
+                <p className="text-red-400 text-xs mt-1">
+                  {errors[q.id]}
+                </p>
               )}
-              {q.type === 'radio' && (
-                <div className="space-y-2">
-                  {(q.options || []).map(o => (
-                    <label key={o} className="flex items-center gap-3 cursor-pointer bg-[#0f1117] rounded-lg px-4 py-2.5 hover:bg-white/5 transition">
-                      <input type="radio" name={q.id} value={o} checked={answers[q.id] === o} onChange={() => setAnswer(q.id, o)} className="accent-blue-500" />
-                      <span className="text-white text-sm">{o}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-              {q.type === 'checkbox' && (
-                <div className="space-y-2">
-                  {(q.options || []).map(o => (
-                    <label key={o} className="flex items-center gap-3 cursor-pointer bg-[#0f1117] rounded-lg px-4 py-2.5 hover:bg-white/5 transition">
-                      <input type="checkbox" checked={(answers[q.id] || []).includes(o)} onChange={() => toggleCheckbox(q.id, o)} className="accent-blue-500" />
-                      <span className="text-white text-sm">{o}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-              {q.type === 'scale' && (
-                <div className="space-y-2">
-                  <div className="flex gap-1 justify-between">
-                    {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                      <button key={n} onClick={() => setAnswer(q.id, n)}
-                        className={`flex-1 py-2 rounded-lg text-sm font-bold transition ${answers[q.id] === n ? 'bg-blue-600 text-white' : 'bg-[#0f1117] text-gray-400 hover:bg-white/10'}`}>
-                        {n}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex justify-between text-xs text-gray-500"><span>Schlecht</span><span>Ausgezeichnet</span></div>
-                </div>
-              )}
-              {q.type === 'yesno' && (
-                <div className="grid grid-cols-2 gap-2">
-                  {['Ja', 'Nein'].map(o => (
-                    <button key={o} onClick={() => setAnswer(q.id, o)}
-                      className={`py-2.5 rounded-lg text-sm font-medium transition border ${answers[q.id] === o ? o === 'Ja' ? 'bg-green-500/20 text-green-400 border-green-500/50' : 'bg-red-500/20 text-red-400 border-red-500/50' : 'bg-[#0f1117] text-gray-400 border-white/10 hover:bg-white/5'}`}>
-                      {o === 'Ja' ? '✅ Ja' : '❌ Nein'}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {errors[q.id] && <p className="text-red-400 text-xs">{errors[q.id]}</p>}
             </div>
           ))}
         </div>
 
-        <button onClick={submit} disabled={submitting}
-          className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl text-sm transition">
-          {submitting ? 'Wird gesendet...' : '📤 Bewerbung absenden'}
+        <button
+          onClick={submit}
+          disabled={submitting}
+          className="w-full bg-blue-600 text-white py-3 rounded-lg"
+        >
+          {submitting ? 'Sende...' : 'Absenden'}
         </button>
-        <p className="text-gray-600 text-xs text-center pb-8">Deine Daten werden vertraulich behandelt. © Hamburg V2 Staff Portal</p>
       </div>
     </div>
   );
