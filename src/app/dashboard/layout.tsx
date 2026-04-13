@@ -1,17 +1,22 @@
-import { requireAuth } from '@/lib/auth';
+import { redirect } from 'next/navigation';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 import Sidebar from '@/components/Sidebar';
 
-export default async function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const profile = await requireAuth();
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const supabase = createServerSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
+
+  const { data: profile } = await supabase.from('profiles').select('is_active').eq('id', user.id).single();
+  if (!profile?.is_active) redirect('/login');
+
   return (
-    <div className="min-h-screen bg-[#0f1117] flex">
+    <div className="flex min-h-screen bg-[#0a0b10]">
       <Sidebar />
-      <main className="flex-1 lg:ml-64 pt-16 lg:pt-0 p-4 lg:p-8 overflow-auto">
-        {children}
+      <main className="flex-1 overflow-auto">
+        <div className="p-8">
+          {children}
+        </div>
       </main>
     </div>
   );

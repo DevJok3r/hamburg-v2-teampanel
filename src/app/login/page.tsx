@@ -5,113 +5,103 @@ import { useRouter } from 'next/navigation';
 import { createClientSupabaseClient } from '@/lib/supabase/client';
 
 export default function LoginPage() {
+  const supabase = createClientSupabaseClient();
+  const router   = useRouter();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
-  const router = useRouter();
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError('');
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, username, is_active')
+        .eq('username', username.trim())
+        .single();
 
-    const supabase = createClientSupabaseClient();
+      if (!profile) { setError('Benutzername nicht gefunden.'); setLoading(false); return; }
+      if (!profile.is_active) { setError('Dein Account ist deaktiviert.'); setLoading(false); return; }
 
-    const fakeEmail = `${username.toLowerCase()}@hamburg-v2.internal`;
+      const { data: authData } = await supabase.from('profiles').select('email').eq('id', profile.id).single();
+      const email = (authData as any)?.email || `${profile.username}@candylife.internal`;
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: fakeEmail,
-      password,
-    });
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) { setError('Falsches Passwort.'); setLoading(false); return; }
 
-    if (authError) {
-      setError('Ungültige Anmeldedaten. Bitte überprüfe Benutzername und Passwort.');
-      setLoading(false);
-      return;
+      router.push('/dashboard');
+    } catch {
+      setError('Ein Fehler ist aufgetreten.');
     }
-
-    router.push('/dashboard');
-    router.refresh();
+    setLoading(false);
   }
 
   return (
-    <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen bg-[#0a0b10] flex items-center justify-center p-4">
+      {/* Background glow */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 bg-pink-500/10 rounded-full blur-3xl" />
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl" />
+        <div className="absolute top-2/5 left-1/2 -translate-x-1/2 w-72 h-72 bg-blue-500/8 rounded-full blur-3xl" />
+      </div>
+
+      <div className="w-full max-w-md relative z-10">
+        {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-xl mb-4">
-            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955
-                   11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824
-                   10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-pink-500 via-purple-500 to-blue-500 flex items-center justify-center mx-auto mb-4 shadow-2xl shadow-purple-500/30">
+            <span className="text-white font-black text-2xl">C</span>
           </div>
-          <h1 className="text-2xl font-bold text-white">Hamburg V2</h1>
-          <p className="text-gray-400 text-sm mt-1">Staff Team Portal</p>
+          <h1 className="text-3xl font-black text-white tracking-tight">CandyLife</h1>
+          <p className="text-gray-500 text-sm mt-1">Staff Team Portal · FiveM Roleplay</p>
         </div>
 
-        <div className="bg-[#1a1d27] border border-white/10 rounded-2xl p-8 shadow-2xl">
-          <h2 className="text-lg font-semibold text-white mb-6">Anmelden</h2>
+        {/* Card */}
+        <div className="bg-[#13151f] border border-white/[0.08] rounded-2xl p-8 shadow-2xl">
+          <h2 className="text-white font-bold text-xl mb-6">Anmelden</h2>
 
-          <form onSubmit={handleLogin} className="space-y-5">
+          <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Benutzername
-              </label>
+              <label className="text-gray-400 text-xs font-medium mb-1.5 block">Benutzername</label>
               <input
                 type="text"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={e => setUsername(e.target.value)}
+                placeholder="dein benutzername"
                 required
-                autoComplete="username"
-                className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-3
-                           text-white placeholder-gray-500 focus:outline-none focus:border-blue-500
-                           focus:ring-1 focus:ring-blue-500 transition"
-                placeholder="dein.benutzername"
+                className="w-full bg-[#0d0e14] border border-white/[0.08] rounded-xl px-4 py-3 text-white placeholder-gray-700 text-sm focus:outline-none focus:border-purple-500/70 transition"
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Passwort
-              </label>
+              <label className="text-gray-400 text-xs font-medium mb-1.5 block">Passwort</label>
               <input
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-                className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-4 py-3
-                           text-white placeholder-gray-500 focus:outline-none focus:border-blue-500
-                           focus:ring-1 focus:ring-blue-500 transition"
+                onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••"
+                required
+                className="w-full bg-[#0d0e14] border border-white/[0.08] rounded-xl px-4 py-3 text-white placeholder-gray-700 text-sm focus:outline-none focus:border-purple-500/70 transition"
               />
             </div>
 
             {error && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
-                <p className="text-red-400 text-sm">{error}</p>
+              <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 text-red-400 text-sm">
+                {error}
               </div>
             )}
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50
-                         disabled:cursor-not-allowed text-white font-semibold py-3 px-4
-                         rounded-lg transition flex items-center justify-center gap-2"
+              className="w-full bg-gradient-to-r from-pink-600 via-purple-600 to-blue-600 hover:from-pink-700 hover:via-purple-700 hover:to-blue-700 disabled:opacity-50 text-white font-semibold py-3 rounded-xl text-sm transition-all shadow-lg shadow-purple-500/20 mt-2"
             >
-              {loading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Anmelden...
-                </>
-              ) : 'Anmelden'}
+              {loading ? 'Anmelden...' : 'Anmelden'}
             </button>
           </form>
 
-          <p className="text-gray-500 text-xs text-center mt-6">
+          <p className="text-gray-700 text-xs text-center mt-6">
             Kein Zugang? Kontaktiere einen Administrator.
           </p>
         </div>
